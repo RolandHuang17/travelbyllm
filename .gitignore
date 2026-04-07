@@ -6,3 +6,5 @@ dist/
 coverage/
 *.log
 .vscode/
+backend/prisma/*.db
+backend/prisma/*.db-journal
