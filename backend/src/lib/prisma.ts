@@ -6,16 +6,15 @@ const globalForPrisma = globalThis as typeof globalThis & {
   prisma?: PrismaClient
 }
 
-const databaseUrl = process.env.DATABASE_URL ?? 'file:./dev.db'
+const databaseUrl = process.env.DATABASE_URL ?? 'file:./prisma/dev.db'
 const sqlitePath = databaseUrl.startsWith('file:')
   ? databaseUrl.slice('file:'.length)
   : databaseUrl
 const adapter = new PrismaBetterSqlite3({
-  // Prisma treats SQLite file paths as relative to the schema directory.
   url:
     sqlitePath === ':memory:'
       ? ':memory:'
-      : resolve(process.cwd(), 'prisma', sqlitePath),
+      : resolve(process.cwd(), sqlitePath),
 })
 
 export const prisma =

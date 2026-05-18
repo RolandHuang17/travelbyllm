@@ -23,3 +23,97 @@ body {
 #root {
   min-height: 100vh;
 }
+
+@keyframes model-orbit-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes model-core-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 36px rgba(125, 211, 252, 0.32);
+  }
+
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 64px rgba(125, 211, 252, 0.55);
+  }
+}
+
+@keyframes model-scanline-move {
+  from {
+    transform: translateY(-100%);
+  }
+
+  to {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes model-pulse-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+}
+
+.model-orbit::before {
+  background: linear-gradient(90deg, transparent, #67e8f9, transparent);
+  border-radius: 9999px;
+  content: "";
+  height: 0.25rem;
+  left: 50%;
+  position: absolute;
+  top: -0.125rem;
+  transform: translateX(-50%);
+  width: 3rem;
+}
+
+.model-orbit-outer {
+  animation: model-orbit-spin 5.6s linear infinite;
+}
+
+.model-orbit-inner {
+  animation: model-orbit-spin 3.8s linear infinite reverse;
+}
+
+.model-core {
+  animation: model-core-breathe 2.4s ease-in-out infinite;
+}
+
+.model-scanline {
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(125, 211, 252, 0.14),
+    transparent
+  );
+  animation: model-scanline-move 2.8s ease-in-out infinite;
+}
+
+.model-pulse-dot {
+  animation: model-pulse-dot 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .model-orbit-outer,
+  .model-orbit-inner,
+  .model-core,
+  .model-scanline,
+  .model-pulse-dot {
+    animation: none;
+  }
+}

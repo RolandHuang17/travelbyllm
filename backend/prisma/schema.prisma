@@ -5,3 +5,52 @@ generator client {
 datasource db {
   provider = "sqlite"
 }
+
+model User {
+  id              Int              @id @default(autoincrement())
+  username        String           @unique
+  passwordHash    String
+  preferenceCards PreferenceCard[]
+  travelRecords   TravelRecord[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model PreferenceCard {
+  id               Int            @id @default(autoincrement())
+  userId           Int
+  cardName         String
+  travelStyle      String
+  transportMode    String
+  driveMode        String?
+  scenicPreference String
+  departureCity    String
+  companionType    String
+  travelDays       Int
+  startDate        DateTime?
+  weatherMode      String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  travelRecords    TravelRecord[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([userId])
+}
+
+model TravelRecord {
+  id            Int             @id @default(autoincrement())
+  userId        Int
+  cardId        Int?
+  recordType    String
+  inputSummary  String
+  resultTitle   String?
+  resultContent String
+  weatherInfo   String?
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  card          PreferenceCard? @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([cardId])
+}
