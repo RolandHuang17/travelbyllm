@@ -19,11 +19,11 @@ type LocationSelectProps = {
 function getSelectShellClass(accent: 'sky' | 'orange') {
   const focusClass =
     accent === 'orange'
-      ? 'focus-within:border-orange-500 focus-within:ring-orange-100'
-      : 'focus-within:border-sky-500 focus-within:ring-sky-100'
+      ? 'focus-within:border-amber-500 focus-within:ring-amber-100'
+      : 'focus-within:border-emerald-500 focus-within:ring-emerald-100'
 
   return [
-    'relative mt-2 flex h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm transition focus-within:ring-4',
+    'relative mt-2 flex min-h-11 w-full items-center justify-center rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm transition focus-within:ring-4',
     focusClass,
   ].join(' ')
 }
@@ -102,19 +102,19 @@ export function LocationSelect({
 
   return (
     <fieldset>
-      <legend className="text-sm font-medium text-slate-700">
+      <legend className="text-sm font-medium text-stone-700">
         {label}
         {required ? <span className="text-rose-500"> *</span> : null}
       </legend>
 
-      <div className="grid gap-2 md:grid-cols-3">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-2">
         <label className="block">
           <span className="sr-only">省份</span>
           <div className={selectShellClass}>
-            <span className="w-full truncate px-3 text-center font-medium text-slate-900">
+            <span className="w-full break-words px-3 pr-6 text-center font-medium leading-5 text-stone-950">
               {provinceName}
             </span>
-            <span className="pointer-events-none absolute right-3 text-slate-500">
+            <span className="pointer-events-none absolute right-3 text-stone-500">
               ⌄
             </span>
             <NativeSelectOverlay
@@ -134,10 +134,10 @@ export function LocationSelect({
         <label className="block">
           <span className="sr-only">地级市</span>
           <div className={selectShellClass}>
-            <span className="w-full truncate px-3 text-center font-medium text-slate-900">
+            <span className="w-full break-words px-3 pr-6 text-center font-medium leading-5 text-stone-950">
               {cityName}
             </span>
-            <span className="pointer-events-none absolute right-3 text-slate-500">
+            <span className="pointer-events-none absolute right-3 text-stone-500">
               ⌄
             </span>
             <NativeSelectOverlay
@@ -157,10 +157,10 @@ export function LocationSelect({
         <label className="block">
           <span className="sr-only">县级区划</span>
           <div className={selectShellClass}>
-            <span className="w-full truncate px-3 text-center font-medium text-slate-900">
+            <span className="w-full break-words px-3 pr-6 text-center font-medium leading-5 text-stone-950">
               {countyName}
             </span>
-            <span className="pointer-events-none absolute right-3 text-slate-500">
+            <span className="pointer-events-none absolute right-3 text-stone-500">
               ⌄
             </span>
             <NativeSelectOverlay
@@ -180,7 +180,7 @@ export function LocationSelect({
         </label>
       </div>
 
-      <p className="mt-1.5 text-xs leading-5 text-slate-500">
+      <p className="mt-1.5 text-xs leading-5 text-stone-500">
         {helperText ??
           `当前：${formattedLocation || '请选择省份和地级市'}。县级可选。`}
       </p>

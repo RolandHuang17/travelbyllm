@@ -7,6 +7,7 @@ import {
   CardError,
   createPreferenceCard,
   deletePreferenceCard,
+  getPreferenceCard,
   listPreferenceCards,
   normalizeCardId,
   updatePreferenceCard,
@@ -36,6 +37,18 @@ cardsRouter.get('/', async (request, response) => {
     const cards = await listPreferenceCards(authUser.id)
 
     return sendSuccess(response, 'ok', { cards })
+  } catch (error) {
+    return handleCardsError(response, error)
+  }
+})
+
+cardsRouter.get('/:id', async (request, response) => {
+  try {
+    const { authUser } = getAuthRequest(request)
+    const cardId = normalizeCardId(request.params.id)
+    const card = await getPreferenceCard(authUser.id, cardId)
+
+    return sendSuccess(response, 'ok', { card })
   } catch (error) {
     return handleCardsError(response, error)
   }

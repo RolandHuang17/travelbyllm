@@ -5,7 +5,10 @@ export type TravelRecordSummary = {
   recordType: string
   inputSummary: string
   resultTitle: string | null
+  resultContent?: string
+  structuredContent: string | null
   weatherInfo: string | null
+  weatherSnapshot: string | null
   createdAt: string
   updatedAt: string
 }
@@ -19,7 +22,9 @@ export type TravelRecordInput = {
   inputSummary: string
   resultTitle: string | null
   resultContent: string
+  structuredContent?: string | null
   weatherInfo: string | null
+  weatherSnapshot?: string | null
   cardId: number | null
 }
 

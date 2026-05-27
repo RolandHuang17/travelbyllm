@@ -9,9 +9,19 @@ datasource db {
 model User {
   id              Int              @id @default(autoincrement())
   username        String           @unique
+  email           String?          @unique
+  emailVerifiedAt DateTime?
+  nickname        String?
+  avatarPreset    String?
+  avatarUrl       String?
+  loginCount      Int              @default(0)
+  lastLoginAt     DateTime?
+  tokenVersion    Int              @default(0)
   passwordHash    String
+  authChallenges  AuthChallenge[]
   preferenceCards PreferenceCard[]
   travelRecords   TravelRecord[]
+  favoritePlaces  FavoritePlace[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 }
@@ -38,19 +48,57 @@ model PreferenceCard {
 }
 
 model TravelRecord {
-  id            Int             @id @default(autoincrement())
-  userId        Int
-  cardId        Int?
-  recordType    String
-  inputSummary  String
-  resultTitle   String?
-  resultContent String
-  weatherInfo   String?
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  card          PreferenceCard? @relation(fields: [cardId], references: [id], onDelete: SetNull)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id                Int             @id @default(autoincrement())
+  userId            Int
+  cardId            Int?
+  recordType        String
+  inputSummary      String
+  resultTitle       String?
+  resultContent     String
+  structuredContent String?
+  weatherInfo       String?
+  weatherSnapshot   String?
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  card              PreferenceCard? @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   @@index([userId, createdAt])
   @@index([cardId])
+}
+
+model FavoritePlace {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  placeKey  String
+  amapPoiId String?
+  name      String
+  address   String
+  cityName  String?
+  district  String?
+  longitude Float
+  latitude  Float
+  category  String
+  note      String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, placeKey])
+  @@index([userId, updatedAt])
+}
+
+model AuthChallenge {
+  id           String    @id @default(cuid())
+  userId       Int
+  purpose      String
+  targetEmail  String
+  secretHash   String
+  expiresAt    DateTime
+  usedAt       DateTime?
+  attemptCount Int       @default(0)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+
+  @@index([userId, purpose, createdAt])
 }

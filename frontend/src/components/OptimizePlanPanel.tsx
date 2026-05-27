@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import type { TravelRecord } from '../api/history'
 import {
   fetchLlmStatus,
@@ -14,6 +15,7 @@ import {
   getGenerationDescription,
   getGenerationLabel,
 } from '../utils/generationDisplay'
+import { ItineraryResultPanel } from './ItineraryResultPanel'
 
 type OptimizePlanPanelProps = {
   token: string
@@ -29,6 +31,19 @@ type OptimizePlanFormState = {
 const initialFormState: OptimizePlanFormState = {
   recordId: '',
   optimizeRequirement: '减少步行，增加美食安排，更适合亲子出行',
+}
+
+function SummaryItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+      <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
+        {label}
+      </p>
+      <p className="mt-1 break-words text-sm font-semibold leading-6 text-slate-900">
+        {value}
+      </p>
+    </div>
+  )
 }
 
 function toRequestInput(form: OptimizePlanFormState): OptimizePlanInput {
@@ -51,6 +66,7 @@ export function OptimizePlanPanel({
   onAuthExpired,
   onPlanGenerated,
 }: OptimizePlanPanelProps) {
+  const [searchParams] = useSearchParams()
   const [form, setForm] = useState<OptimizePlanFormState>(initialFormState)
   const [plan, setPlan] = useState<PlanResult | null>(null)
   const [record, setRecord] = useState<TravelRecord | null>(null)
@@ -61,6 +77,7 @@ export function OptimizePlanPanel({
   const [generationModel, setGenerationModel] = useState('')
   const [message, setMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
+  const [isInputExpanded, setIsInputExpanded] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
@@ -96,6 +113,19 @@ export function OptimizePlanPanel({
     }
   }, [onAuthExpired, token])
 
+  useEffect(() => {
+    const recordId = searchParams.get('recordId')
+
+    if (!recordId) {
+      return
+    }
+
+    setForm((currentForm) => ({
+      ...currentForm,
+      recordId,
+    }))
+  }, [searchParams])
+
   const updateFormField = (
     field: keyof OptimizePlanFormState,
     value: string,
@@ -120,6 +150,7 @@ export function OptimizePlanPanel({
       setGenerationMode(result.generationMode)
       setGenerationModel(result.model)
       setMessage('方案已优化，并已作为新的历史记录保存')
+      setIsInputExpanded(false)
       onPlanGenerated()
     } catch (error) {
       if (isAuthExpiredError(error)) {
@@ -128,10 +159,15 @@ export function OptimizePlanPanel({
       }
 
       setErrorMessage(getErrorMessage(error))
+      setIsInputExpanded(true)
     } finally {
       setIsSubmitting(false)
     }
   }
+
+  const canCollapseInput = Boolean(plan || record)
+  const requirementSummary =
+    form.optimizeRequirement.trim() || '未填写优化要求'
 
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
@@ -144,7 +180,7 @@ export function OptimizePlanPanel({
             方案 AI 优化
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-            这里会调用 `/api/plan/optimize`，读取已有历史记录并根据优化要求生成优化版方案。优化结果会新建历史记录，不覆盖原方案。
+            读取已有行程并追加新的旅行要求，生成一个可对比的优化版本，不覆盖原方案。
           </p>
         </div>
 
@@ -160,7 +196,7 @@ export function OptimizePlanPanel({
               </span>
             ) : (
               <span className="font-medium text-slate-600">
-                当前使用本地 Mock 兜底
+                当前使用本地模板
               </span>
             )}
           </div>
@@ -173,81 +209,128 @@ export function OptimizePlanPanel({
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">
-              优化输入
-            </h3>
-            <p className="mt-1 text-sm text-slate-500">
-              先到历史记录页找到要优化的记录 ID，再在这里填写优化要求。
-            </p>
+      <div className="mt-6 space-y-6">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">
+                优化输入
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                先到历史记录页找到要优化的记录 ID，再在这里填写优化要求。
+              </p>
+            </div>
+
+            {canCollapseInput ? (
+              <button
+                className="inline-flex shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-teal-200 hover:text-teal-700"
+                type="button"
+                onClick={() =>
+                  setIsInputExpanded((currentValue) => !currentValue)
+                }
+              >
+                {isInputExpanded ? '收起输入' : '编辑输入'}
+              </button>
+            ) : null}
           </div>
 
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">
-              历史记录 ID
-            </span>
-            <input
-              className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
-              min={1}
-              required
-              type="number"
-              value={form.recordId}
-              onChange={(event) =>
-                updateFormField('recordId', event.target.value)
-              }
-              placeholder="例如：1"
-            />
-          </label>
+          {isInputExpanded ? (
+            <form
+              className="mt-5 grid gap-4 lg:grid-cols-[0.32fr_0.68fr]"
+              onSubmit={handleSubmit}
+            >
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">
+                  历史记录 ID
+                </span>
+                <input
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
+                  min={1}
+                  required
+                  type="number"
+                  value={form.recordId}
+                  onChange={(event) =>
+                    updateFormField('recordId', event.target.value)
+                  }
+                  placeholder="例如：1"
+                />
+              </label>
 
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">
-              优化要求
-            </span>
-            <textarea
-              className="mt-2 min-h-36 w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
-              required
-              value={form.optimizeRequirement}
-              onChange={(event) =>
-                updateFormField('optimizeRequirement', event.target.value)
-              }
-              placeholder="例如：减少步行，增加美食安排，更适合亲子出行"
-            />
-          </label>
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">
+                  优化要求
+                </span>
+                <textarea
+                  className="mt-2 min-h-24 w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
+                  required
+                  value={form.optimizeRequirement}
+                  onChange={(event) =>
+                    updateFormField('optimizeRequirement', event.target.value)
+                  }
+                  placeholder="例如：减少步行，增加美食安排，更适合亲子出行"
+                />
+              </label>
 
-          {message ? (
-            <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-              {message}
-            </p>
-          ) : null}
+              {message ? (
+                <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 lg:col-span-2">
+                  {message}
+                </p>
+              ) : null}
 
-          {errorMessage ? (
-            <p className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              {errorMessage}
-            </p>
-          ) : null}
+              {errorMessage ? (
+                <p className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700 lg:col-span-2">
+                  {errorMessage}
+                </p>
+              ) : null}
 
-          <button
-            className="w-full rounded-xl bg-teal-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-teal-600 disabled:cursor-not-allowed disabled:bg-slate-300"
-            disabled={isSubmitting}
-            type="submit"
-          >
-            {isSubmitting ? '优化中...' : '生成优化版方案'}
-          </button>
-        </form>
+              <button
+                className="w-full rounded-xl bg-teal-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-teal-600 disabled:cursor-not-allowed disabled:bg-slate-300 lg:col-span-2"
+                disabled={isSubmitting}
+                type="submit"
+              >
+                {isSubmitting ? '正在优化，完成后自动展示' : '生成优化版方案'}
+              </button>
+            </form>
+          ) : (
+            <div className="mt-5 space-y-4">
+              <div className="grid gap-3 md:grid-cols-[0.32fr_0.68fr]">
+                <SummaryItem
+                  label="来源记录"
+                  value={form.recordId ? `#${form.recordId}` : '未填写'}
+                />
+                <SummaryItem label="优化要求" value={requirementSummary} />
+              </div>
+
+              {message ? (
+                <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  {message}
+                </p>
+              ) : null}
+            </div>
+          )}
+        </div>
 
         <div className="min-h-96 rounded-2xl border border-slate-200 bg-teal-50/50 p-5">
           <div>
             <h3 className="text-base font-semibold text-slate-900">优化结果</h3>
             <p className="mt-1 text-sm text-slate-500">
-              已接入大模型优化链路；如果模型不可用，系统会自动使用本地模板兜底。
+              优化完成后会展示新的结构化行程，并保存为新的历史记录。
             </p>
           </div>
 
           {isSubmitting ? (
             <div className="mt-6">
-              <ModelGenerationLoader llmStatus={llmStatus} />
+              <ModelGenerationLoader
+                contextItems={[
+                  {
+                    label: '来源记录',
+                    value: form.recordId ? `#${form.recordId}` : '未填写',
+                  },
+                  { label: '优化要求', value: requirementSummary },
+                ]}
+                llmStatus={llmStatus}
+                variant="optimize"
+              />
             </div>
           ) : plan ? (
             <div className="mt-6 space-y-4">
@@ -269,18 +352,11 @@ export function OptimizePlanPanel({
                 </p>
               </div>
 
-              <div className="rounded-2xl bg-white p-5">
-                <p className="text-sm font-medium text-slate-700">
-                  完整优化方案
-                </p>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-                  {plan.content}
-                </p>
-              </div>
+              <ItineraryResultPanel plan={plan} record={record} />
             </div>
           ) : (
             <div className="mt-6 rounded-xl bg-white px-5 py-6 text-sm leading-6 text-slate-600">
-              填写左侧表单后生成优化版方案。生成成功后，结果会在这里展示，并自动写入历史记录。
+              填写上方表单后生成优化版方案。生成成功后，结果会在这里展示，并自动写入历史记录。
             </div>
           )}
         </div>

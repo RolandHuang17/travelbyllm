@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express'
-import { getAuthUserById, type AuthUser } from '../services/authService'
+import { getAuthSessionById, type AuthUser } from '../services/authService'
 import { sendError } from '../utils/apiResponse'
 import { verifyAuthToken } from '../utils/jwt'
 
@@ -34,13 +34,19 @@ export async function requireAuth(
 
   try {
     const payload = verifyAuthToken(token)
-    const user = await getAuthUserById(payload.userId)
+    const session = await getAuthSessionById(payload.userId)
 
-    if (!user) {
+    if (!session) {
       return sendError(response, 401, '登录状态无效，请重新登录')
     }
 
-    ;(request as AuthenticatedRequest).authUser = user
+    const tokenVersion = payload.tokenVersion ?? 0
+
+    if (tokenVersion !== session.tokenVersion) {
+      return sendError(response, 401, '登录状态无效，请重新登录')
+    }
+
+    ;(request as AuthenticatedRequest).authUser = session.user
     return next()
   } catch (_error) {
     return sendError(response, 401, '登录状态无效，请重新登录')

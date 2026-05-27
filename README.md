@@ -18,7 +18,8 @@
 - [x] 接入 Prisma + SQLite
 - [x] 提供 `/api/health` 健康检查接口
 - [x] 前端首页完成前后端连通性验证
-- [ ] 完成单城市规划功能原型
+- [x] 完成用户、偏好卡片、历史记录和规划模块基础链路
+- [x] 完成高德互动地图、地点收藏和路线查询模块
 
 ## 本阶段骨架
 
@@ -45,6 +46,31 @@ npm run dev
 
 后端默认运行在 `http://localhost:3001`。
 
+后端 `.env` 需要配置基础数据库、JWT、可选大模型参数，以及地图和 SMTP 相关参数：
+
+```bash
+DASHSCOPE_API_KEY="阿里云百炼 API Key"
+LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+LLM_MODEL="qwen3.7-max"
+LLM_ENABLE_THINKING="true"
+LLM_TIMEOUT_MS="120000"
+PLAN_LLM_TIMEOUT_MS="90000"
+AMAP_WEB_SERVICE_KEY="高德 Web 服务 Key"
+AMAP_JS_SECURITY_CODE="高德 JS API 安全密钥"
+SMTP_HOST="smtp.qq.com"
+SMTP_PORT="465"
+SMTP_SECURE="true"
+SMTP_USER="QQ 邮箱地址"
+SMTP_PASS="QQ 邮箱新生成的 SMTP 授权码"
+MAIL_FROM="TravelByLLM <QQ 邮箱地址>"
+PUBLIC_WEB_URL="http://localhost:5173"
+AUTH_CHALLENGE_SECRET="一段足够长的随机字符串"
+```
+
+`LLM_ENABLE_THINKING` 用于控制 Qwen3.7-Max 的思考模式；需要降低响应时间或成本时可以改成 `"false"`。`PLAN_LLM_TIMEOUT_MS` 限制行程生成等待时间，超时后会返回可展示的兜底方案，避免页面持续等待。修改后重启后端服务，前端规划页面会通过 `/api/plan/llm-status` 自动显示当前模型名。
+
+邮箱绑定、密码找回和安全通知使用 SMTP 发送邮件。QQ 邮箱授权码等同于密码，已暴露的授权码需要在 QQ 邮箱中撤销并重新生成，只写入本机 `.env`。
+
 ### 2. 启动前端
 ```bash
 cd frontend
@@ -53,6 +79,14 @@ npm run dev
 ```
 
 前端默认运行在 `http://localhost:5173`，开发阶段通过 Vite proxy 将 `/api` 转发到后端。
+
+前端 `.env.local` 需要配置可公开的高德 JS API Key：
+
+```bash
+VITE_AMAP_JS_KEY="高德 JS API Key"
+```
+
+高德 JS API 安全密钥不再放在前端环境变量中，浏览器请求会经由后端 `/_AMapService` 代理补齐安全参数。
 
 ## 健康检查接口
 

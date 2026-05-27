@@ -6,14 +6,24 @@ import {
   type AuthUser,
 } from './api/auth'
 import { AppLayout } from './components/AppLayout'
+import {
+  createInitialCityPlanPanelState,
+  type CityPlanPanelState,
+} from './components/cityPlanPanelState'
 import { RequireAuth } from './components/RequireAuth'
 import { AuthPage } from './pages/AuthPage'
 import { CardsPage } from './pages/CardsPage'
 import { CityPlanPage } from './pages/CityPlanPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DrivePlanPage } from './pages/DrivePlanPage'
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { HistoryPage } from './pages/HistoryPage'
+import { InteractiveMapPage } from './pages/InteractiveMapPage'
 import { OptimizePlanPage } from './pages/OptimizePlanPage'
+import { PreferenceCardFormPage } from './pages/PreferenceCardFormPage'
+import { ProfilePage } from './pages/ProfilePage'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
+import { WeatherPage } from './pages/WeatherPage'
 
 const initialAuthToken =
   typeof window === 'undefined'
@@ -28,12 +38,15 @@ function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
   const [authToken, setAuthToken] = useState<string | null>(initialAuthToken)
   const [historyRefreshSignal, setHistoryRefreshSignal] = useState(0)
+  const [cityPlanPanelState, setCityPlanPanelState] =
+    useState<CityPlanPanelState>(() => createInitialCityPlanPanelState())
 
   const handleAuthExpired = useCallback(() => {
     localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
     setCurrentUser(null)
     setAuthToken(null)
     setAuthStatus('guest')
+    setCityPlanPanelState(createInitialCityPlanPanelState())
     navigate('/auth', { replace: true })
   }, [navigate])
 
@@ -78,6 +91,7 @@ function App() {
     setCurrentUser(user)
     setAuthToken(token)
     setAuthStatus('authenticated')
+    setCityPlanPanelState(createInitialCityPlanPanelState())
   }
 
   const handleLogout = () => {
@@ -85,11 +99,30 @@ function App() {
     setCurrentUser(null)
     setAuthToken(null)
     setAuthStatus('guest')
+    setCityPlanPanelState(createInitialCityPlanPanelState())
     navigate('/auth', { replace: true })
+  }
+
+  const handlePasswordChanged = () => {
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+    setCurrentUser(null)
+    setAuthToken(null)
+    setAuthStatus('guest')
+    setCityPlanPanelState(createInitialCityPlanPanelState())
+    navigate('/auth', {
+      replace: true,
+      state: {
+        notice: '密码已更新，请使用新密码重新登录',
+      },
+    })
   }
 
   const handlePlanGenerated = () => {
     setHistoryRefreshSignal((currentSignal) => currentSignal + 1)
+  }
+
+  const handleUserUpdated = (user: AuthUser) => {
+    setCurrentUser(user)
   }
 
   const protectedRoute = (children: ReactNode) => (
@@ -118,6 +151,8 @@ function App() {
           }
           path="auth"
         />
+        <Route element={<ForgotPasswordPage />} path="auth/forgot-password" />
+        <Route element={<ResetPasswordPage />} path="auth/reset-password" />
         <Route
           element={protectedRoute(
             authToken ? (
@@ -129,8 +164,46 @@ function App() {
         <Route
           element={protectedRoute(
             authToken ? (
+              <PreferenceCardFormPage
+                token={authToken}
+                onAuthExpired={handleAuthExpired}
+              />
+            ) : null,
+          )}
+          path="cards/new"
+        />
+        <Route
+          element={protectedRoute(
+            authToken ? (
+              <PreferenceCardFormPage
+                token={authToken}
+                onAuthExpired={handleAuthExpired}
+              />
+            ) : null,
+          )}
+          path="cards/:cardId/edit"
+        />
+        <Route
+          element={protectedRoute(
+            authToken && currentUser ? (
+              <ProfilePage
+                token={authToken}
+                currentUser={currentUser}
+                onAuthExpired={handleAuthExpired}
+                onPasswordChanged={handlePasswordChanged}
+                onUserUpdated={handleUserUpdated}
+              />
+            ) : null,
+          )}
+          path="profile"
+        />
+        <Route
+          element={protectedRoute(
+            authToken ? (
               <CityPlanPage
                 token={authToken}
+                panelState={cityPlanPanelState}
+                onPanelStateChange={setCityPlanPanelState}
                 onAuthExpired={handleAuthExpired}
                 onPlanGenerated={handlePlanGenerated}
               />
@@ -149,6 +222,28 @@ function App() {
             ) : null,
           )}
           path="plan/drive"
+        />
+        <Route
+          element={protectedRoute(
+            authToken ? (
+              <InteractiveMapPage
+                token={authToken}
+                onAuthExpired={handleAuthExpired}
+              />
+            ) : null,
+          )}
+          path="map"
+        />
+        <Route
+          element={protectedRoute(
+            authToken ? (
+              <WeatherPage
+                token={authToken}
+                onAuthExpired={handleAuthExpired}
+              />
+            ) : null,
+          )}
+          path="weather"
         />
         <Route
           element={protectedRoute(

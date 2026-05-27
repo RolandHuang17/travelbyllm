@@ -22,6 +22,7 @@ type ErrorResponse = {
 type GenerateTextInput = {
   messages: ChatMessage[]
   temperature?: number
+  timeoutMs?: number
 }
 
 export class LlmError extends Error {}
@@ -31,15 +32,28 @@ function getLlmConfig() {
   const baseUrl =
     process.env.LLM_BASE_URL ??
     'https://dashscope.aliyuncs.com/compatible-mode/v1'
-  const model = process.env.LLM_MODEL ?? 'qwen3.5-flash'
-  const timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 20000)
+  const model = process.env.LLM_MODEL ?? 'qwen3.7-max'
+  const timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 120000)
+  const enableThinking = parseBooleanEnv(
+    process.env.LLM_ENABLE_THINKING,
+    true,
+  )
 
   return {
     apiKey,
     baseUrl: baseUrl.replace(/\/$/, ''),
     model,
-    timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 20000,
+    timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 120000,
+    enableThinking,
   }
+}
+
+function parseBooleanEnv(value: string | undefined, defaultValue: boolean) {
+  if (value === undefined) {
+    return defaultValue
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
 export function isLlmConfigured() {
@@ -70,15 +84,20 @@ function getErrorResponseMessage(body: unknown) {
 export async function generateLlmText({
   messages,
   temperature = 0.7,
+  timeoutMs: timeoutMsOverride,
 }: GenerateTextInput) {
-  const { apiKey, baseUrl, model, timeoutMs } = getLlmConfig()
+  const { apiKey, baseUrl, model, timeoutMs, enableThinking } = getLlmConfig()
+  const requestTimeoutMs =
+    Number.isFinite(timeoutMsOverride) && timeoutMsOverride && timeoutMsOverride > 0
+      ? timeoutMsOverride
+      : timeoutMs
 
   if (!apiKey) {
     throw new LlmError('未配置大模型 API Key')
   }
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs)
 
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -92,9 +111,7 @@ export async function generateLlmText({
         messages,
         temperature,
         stream: false,
-        extra_body: {
-          enable_thinking: false,
-        },
+        enable_thinking: enableThinking,
       }),
       signal: controller.signal,
     })

@@ -206,10 +206,30 @@ export function listPreferenceCards(userId: number) {
     where: {
       userId,
     },
-    orderBy: {
-      updatedAt: 'desc',
+    orderBy: [
+      {
+        createdAt: 'asc',
+      },
+      {
+        id: 'asc',
+      },
+    ],
+  })
+}
+
+export async function getPreferenceCard(userId: number, cardId: number) {
+  const card = await prisma.preferenceCard.findFirst({
+    where: {
+      id: cardId,
+      userId,
     },
   })
+
+  if (!card) {
+    throw new CardError(404, '偏好卡片不存在')
+  }
+
+  return card
 }
 
 export async function createPreferenceCard(

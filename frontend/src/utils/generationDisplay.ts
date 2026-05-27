@@ -6,10 +6,10 @@ export function getGenerationLabel(generationMode: GenerationMode | null) {
   }
 
   if (generationMode === 'mock-fallback') {
-    return 'Mock Fallback'
+    return 'Local Backup'
   }
 
-  return 'Mock Plan'
+  return 'Local Plan'
 }
 
 export function getGenerationDescription(
@@ -20,8 +20,8 @@ export function getGenerationDescription(
   }
 
   if (generationMode === 'mock-fallback') {
-    return '本次调用大模型失败，系统已自动使用本地模板兜底生成。'
+    return '在线模型暂时不可用，系统已使用本地模板生成可预览方案。'
   }
 
-  return '当前后端未配置可用大模型，本次结果由本地模板生成。'
+  return '当前未启用在线模型，本次结果由本地模板生成。'
 }

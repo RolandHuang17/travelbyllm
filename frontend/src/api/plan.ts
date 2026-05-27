@@ -1,9 +1,12 @@
 import type { TravelRecord } from './history'
+import type { StructuredItinerary } from '../types/structuredItinerary'
+import type { WeatherSnapshot } from '../types/weather'
 
 export type CityPlanInput = {
   targetCity: string
   departureCity: string | null
   travelDays: number | null
+  startDate: string | null
   cardId: number | null
   temporaryPreference: string | null
   weatherMode: string | null
@@ -14,6 +17,7 @@ export type DrivePlanInput = {
   destinationCity: string
   waypointCities: string[]
   travelDays: number
+  startDate: string | null
   cardId: number | null
   temporaryPreference: string | null
   weatherMode: string | null
@@ -28,6 +32,8 @@ export type PlanResult = {
   title: string
   summary: string
   content: string
+  structuredContent: StructuredItinerary
+  weatherSnapshot: WeatherSnapshot | null
 }
 
 export type CityPlanResult = PlanResult

@@ -109,6 +109,10 @@ export async function fetchPreferenceCards(token: string) {
   return requestCards<CardsResponse>('/api/cards', token)
 }
 
+export async function fetchPreferenceCard(token: string, id: number) {
+  return requestCards<CardResponse>(`/api/cards/${id}`, token)
+}
+
 export async function createPreferenceCard(
   token: string,
   input: PreferenceCardInput,

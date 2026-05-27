@@ -5,7 +5,9 @@ type TravelRecordInput = {
   inputSummary: unknown
   resultTitle: unknown
   resultContent: unknown
+  structuredContent: unknown
   weatherInfo: unknown
+  weatherSnapshot: unknown
   cardId: unknown
 }
 
@@ -14,7 +16,9 @@ type NormalizedTravelRecordInput = {
   inputSummary: string
   resultTitle: string | null
   resultContent: string
+  structuredContent: string | null
   weatherInfo: string | null
+  weatherSnapshot: string | null
   cardId: number | null
 }
 
@@ -86,7 +90,15 @@ function normalizeTravelRecordInput(
       recordInput.resultContent,
       '结果内容',
     ),
+    structuredContent: normalizeOptionalString(
+      recordInput.structuredContent,
+      '结构化行程',
+    ),
     weatherInfo: normalizeOptionalString(recordInput.weatherInfo, '天气信息'),
+    weatherSnapshot: normalizeOptionalString(
+      recordInput.weatherSnapshot,
+      '天气快照',
+    ),
     cardId: normalizeOptionalId(recordInput.cardId, '偏好卡片 ID'),
   }
 }
@@ -148,7 +160,10 @@ export function listTravelRecords(userId: number) {
       recordType: true,
       inputSummary: true,
       resultTitle: true,
+      resultContent: true,
+      structuredContent: true,
       weatherInfo: true,
+      weatherSnapshot: true,
       createdAt: true,
       updatedAt: true,
     },

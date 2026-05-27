@@ -24,96 +24,129 @@ body {
   min-height: 100vh;
 }
 
-@keyframes model-orbit-spin {
-  from {
-    transform: rotate(0deg);
+@keyframes model-soft-glow-drift {
+  0%,
+  100% {
+    opacity: 0.46;
+    transform: translate3d(0, 0, 0) scale(1);
   }
 
-  to {
-    transform: rotate(360deg);
+  50% {
+    opacity: 0.72;
+    transform: translate3d(-0.75rem, 0.5rem, 0) scale(1.08);
   }
 }
 
-@keyframes model-core-breathe {
+@keyframes model-calm-ring {
   0%,
   100% {
+    opacity: 0.55;
     transform: scale(1);
-    box-shadow: 0 0 36px rgba(125, 211, 252, 0.32);
   }
 
   50% {
-    transform: scale(1.08);
-    box-shadow: 0 0 64px rgba(125, 211, 252, 0.55);
+    opacity: 0.18;
+    transform: scale(1.12);
   }
 }
 
-@keyframes model-scanline-move {
+@keyframes model-wait-dot {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.9);
+  }
+
+  50% {
+    opacity: 0.95;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes spot-dialog-backdrop-in {
   from {
-    transform: translateY(-100%);
+    opacity: 0;
+    backdrop-filter: blur(0);
   }
 
   to {
-    transform: translateY(100%);
-  }
-}
-
-@keyframes model-pulse-dot {
-  0%,
-  100% {
-    opacity: 0.35;
-    transform: scale(0.75);
-  }
-
-  50% {
     opacity: 1;
-    transform: scale(1.25);
+    backdrop-filter: blur(24px);
   }
 }
 
-.model-orbit::before {
-  background: linear-gradient(90deg, transparent, #67e8f9, transparent);
-  border-radius: 9999px;
-  content: "";
-  height: 0.25rem;
-  left: 50%;
-  position: absolute;
-  top: -0.125rem;
-  transform: translateX(-50%);
-  width: 3rem;
+@keyframes spot-dialog-backdrop-out {
+  from {
+    opacity: 1;
+    backdrop-filter: blur(24px);
+  }
+
+  to {
+    opacity: 0;
+    backdrop-filter: blur(0);
+  }
 }
 
-.model-orbit-outer {
-  animation: model-orbit-spin 5.6s linear infinite;
+@keyframes spot-dialog-panel-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 1.25rem, 0) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
 }
 
-.model-orbit-inner {
-  animation: model-orbit-spin 3.8s linear infinite reverse;
+@keyframes spot-dialog-panel-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate3d(0, 0.75rem, 0) scale(0.99);
+  }
 }
 
-.model-core {
-  animation: model-core-breathe 2.4s ease-in-out infinite;
+.model-soft-glow {
+  animation: model-soft-glow-drift 7.5s ease-in-out infinite;
 }
 
-.model-scanline {
-  background: linear-gradient(
-    180deg,
-    transparent,
-    rgba(125, 211, 252, 0.14),
-    transparent
-  );
-  animation: model-scanline-move 2.8s ease-in-out infinite;
+.model-calm-ring {
+  animation: model-calm-ring 3.4s ease-in-out infinite;
 }
 
-.model-pulse-dot {
-  animation: model-pulse-dot 1.4s ease-in-out infinite;
+.model-wait-dot {
+  animation: model-wait-dot 2.2s ease-in-out infinite;
+}
+
+.spot-dialog-backdrop {
+  animation: spot-dialog-backdrop-in 180ms ease-out both;
+}
+
+.spot-dialog-backdrop-out {
+  animation: spot-dialog-backdrop-out 160ms ease-in both;
+}
+
+.spot-dialog-panel {
+  animation: spot-dialog-panel-in 210ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.spot-dialog-panel-out {
+  animation: spot-dialog-panel-out 160ms ease-in both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .model-orbit-outer,
-  .model-orbit-inner,
-  .model-core,
-  .model-scanline,
-  .model-pulse-dot {
+  .model-soft-glow,
+  .model-calm-ring,
+  .model-wait-dot,
+  .spot-dialog-backdrop,
+  .spot-dialog-backdrop-out,
+  .spot-dialog-panel,
+  .spot-dialog-panel-out {
     animation: none;
   }
 }

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { login, register, type AuthUser } from '../api/auth'
 
 type AuthPageProps = {
@@ -12,6 +12,7 @@ type LocationState = {
   from?: {
     pathname?: string
   }
+  notice?: string
 }
 
 export function AuthPage({
@@ -25,7 +26,9 @@ export function AuthPage({
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [authMessage, setAuthMessage] = useState('')
+  const [authMessage, setAuthMessage] = useState(
+    () => (location.state as LocationState | null)?.notice ?? '',
+  )
   const [authErrorMessage, setAuthErrorMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -68,7 +71,7 @@ export function AuthPage({
       }
 
       const result = await login({
-        username,
+        identifier: username,
         password,
       })
 
@@ -96,8 +99,7 @@ export function AuthPage({
             注册 / 登录
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-600">
-            登录成功后 token 会保存到 localStorage，刷新页面会自动请求
-            `/api/auth/me` 恢复当前用户。
+            登录后即可管理账户资料、绑定邮箱和历史旅行方案。
           </p>
         </div>
 
@@ -134,7 +136,9 @@ export function AuthPage({
 
         <form className="mt-5 space-y-4" onSubmit={handleAuthSubmit}>
           <label className="block">
-            <span className="text-sm font-medium text-slate-700">用户名</span>
+            <span className="text-sm font-medium text-slate-700">
+              {isRegisterMode ? '用户名' : '用户名或邮箱'}
+            </span>
             <input
               className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
               maxLength={30}
@@ -143,7 +147,11 @@ export function AuthPage({
               type="text"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
-              placeholder="请输入 3 到 30 位用户名"
+              placeholder={
+                isRegisterMode
+                  ? '请输入 3 到 30 位用户名'
+                  : '请输入用户名或已绑定邮箱'
+              }
             />
           </label>
 
@@ -175,6 +183,17 @@ export function AuthPage({
                 placeholder="请再次输入密码"
               />
             </label>
+          ) : null}
+
+          {!isRegisterMode ? (
+            <div className="flex justify-end">
+              <Link
+                className="text-sm font-medium text-sky-700 transition hover:text-sky-600"
+                to="/auth/forgot-password"
+              >
+                忘记密码？
+              </Link>
+            </div>
           ) : null}
 
           {authMessage ? (

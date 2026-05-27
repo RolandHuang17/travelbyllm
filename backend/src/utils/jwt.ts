@@ -2,6 +2,7 @@ import jwt, { type JwtPayload, type SignOptions } from 'jsonwebtoken'
 
 type AuthTokenPayload = JwtPayload & {
   userId: number
+  tokenVersion?: number
 }
 
 function getJwtSecret() {
@@ -14,14 +15,14 @@ function getJwtSecret() {
   return secret
 }
 
-export function signAuthToken(userId: number) {
+export function signAuthToken(userId: number, tokenVersion: number) {
   const expiresIn = (process.env.JWT_EXPIRES_IN ??
     '7d') as SignOptions['expiresIn']
   const options: SignOptions = {
     expiresIn,
   }
 
-  return jwt.sign({ userId }, getJwtSecret(), options)
+  return jwt.sign({ userId, tokenVersion }, getJwtSecret(), options)
 }
 
 export function verifyAuthToken(token: string) {
@@ -30,7 +31,9 @@ export function verifyAuthToken(token: string) {
   if (
     typeof payload !== 'object' ||
     payload === null ||
-    typeof (payload as AuthTokenPayload).userId !== 'number'
+    typeof (payload as AuthTokenPayload).userId !== 'number' ||
+    ((payload as AuthTokenPayload).tokenVersion !== undefined &&
+      typeof (payload as AuthTokenPayload).tokenVersion !== 'number')
   ) {
     throw new Error('Invalid token payload')
   }
