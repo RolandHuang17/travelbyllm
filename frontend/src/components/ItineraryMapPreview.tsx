@@ -30,6 +30,37 @@ function sortMapPoints(points: StructuredItineraryMapPoint[]) {
   })
 }
 
+function getDrawablePointKey(point: StructuredItineraryMapPoint) {
+  if (point.longitude !== null && point.latitude !== null) {
+    return `coordinate:${point.longitude.toFixed(6)},${point.latitude.toFixed(6)}`
+  }
+
+  return `place:${point.day}:${point.order}:${point.name}`
+}
+
+function mergeDrawableMapPoints(points: StructuredItineraryMapPoint[]) {
+  const pointsByKey = new Map<string, StructuredItineraryMapPoint>()
+
+  points.forEach((point) => {
+    if (!isVerifiedDrawablePoint(point)) {
+      return
+    }
+
+    pointsByKey.set(getDrawablePointKey(point), point)
+  })
+
+  return sortMapPoints(Array.from(pointsByKey.values()))
+}
+
+function isVerifiedDrawablePoint(point: StructuredItineraryMapPoint) {
+  return (
+    point.verified &&
+    point.source === 'amap' &&
+    point.geocodeStatus === 'success' &&
+    Boolean(getPointCoordinate(point))
+  )
+}
+
 export function ItineraryMapPreview({
   itinerary,
   className = '',
@@ -41,12 +72,16 @@ export function ItineraryMapPreview({
   const [mapLoadError, setMapLoadError] = useState('')
 
   const drawablePoints = useMemo(
-    () =>
-      sortMapPoints(
-        Array.isArray(itinerary?.mapPoints) ? itinerary.mapPoints : [],
-      ).filter((point) =>
-        Boolean(getPointCoordinate(point)),
-      ),
+    () => {
+      const verifiedPoints = Array.isArray(itinerary?.verifiedMapPoints)
+        ? itinerary.verifiedMapPoints
+        : []
+      const fallbackPoints = Array.isArray(itinerary?.mapPoints)
+        ? itinerary.mapPoints.filter(isVerifiedDrawablePoint)
+        : []
+
+      return mergeDrawableMapPoints([...verifiedPoints, ...fallbackPoints])
+    },
     [itinerary],
   )
 
@@ -152,16 +187,16 @@ export function ItineraryMapPreview({
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-4 py-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-teal-700">
-            Map Outline
+            Verified Map
           </p>
           <h3 className="mt-1 text-sm font-semibold text-slate-900">
-            行程轮廓地图
+            已验证地点地图
           </h3>
         </div>
         <p className="text-right text-xs leading-5 text-slate-500">
           {drawablePoints.length > 0
-            ? `${drawablePoints.length} 个可绘制地点`
-            : '暂无可绘制地点'}
+            ? `${drawablePoints.length} 个高德验证地点`
+            : '暂无验证地点'}
         </p>
       </div>
 
@@ -174,7 +209,7 @@ export function ItineraryMapPreview({
 
         {!drawablePoints.length ? (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-100/90 px-6 text-center text-sm leading-6 text-slate-500">
-            暂无可绘制地点，仍可查看文字行程。这里展示的是行程点位轮廓，不是实时导航路线。
+            暂无高德验证地点，仍可查看文字行程。这里展示的是已验证点位轮廓，不是实时导航路线。
           </div>
         ) : null}
 
@@ -207,7 +242,10 @@ export function ItineraryMapPreview({
                     Day {point.day} / {point.name}
                   </span>
                   <span className="block text-xs text-slate-500">
-                    {point.city || point.addressHint || '未记录位置补充'}
+                    {point.formattedAddress ||
+                      point.city ||
+                      point.addressHint ||
+                      '未记录位置补充'}
                   </span>
                 </span>
               </li>

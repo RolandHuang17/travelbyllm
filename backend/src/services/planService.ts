@@ -94,6 +94,13 @@ type StructuredItineraryTransition = {
   note: string | null
 }
 
+type StructuredDataSource = 'user' | 'amap' | 'weather' | 'llm_advice'
+
+type StructuredVerification = {
+  source: StructuredDataSource
+  verified: boolean
+}
+
 type StructuredItineraryItem = {
   timeOfDay: string | null
   timeWindow: string | null
@@ -108,11 +115,44 @@ type StructuredItineraryItem = {
   transition: StructuredItineraryTransition | null
 }
 
+type StructuredItineraryTimelineItem = StructuredItineraryItem &
+  StructuredVerification
+
+type StructuredItineraryTransportCard = StructuredVerification & {
+  title: string
+  mode: string | null
+  route: string
+  departureText: string | null
+  arrivalText: string | null
+  durationText: string | null
+  distanceText: string | null
+  reason: string
+}
+
+type StructuredItineraryPlaceCard = StructuredVerification & {
+  name: string
+  city: string | null
+  addressHint: string | null
+  description: string
+  durationText: string | null
+  visitTips: string[]
+}
+
+type StructuredItineraryLodgingAdvice = StructuredVerification & {
+  area: string
+  reason: string
+}
+
 type StructuredItineraryDay = {
   day: number
   title: string
   city: string | null
   items: StructuredItineraryItem[]
+  strategy: string
+  timelineItems: StructuredItineraryTimelineItem[]
+  transportCards: StructuredItineraryTransportCard[]
+  placeCards: StructuredItineraryPlaceCard[]
+  lodgingAreaAdvice: StructuredItineraryLodgingAdvice[]
   alternatives: string[]
   riskNotes: string[]
 }
@@ -126,16 +166,41 @@ type StructuredItineraryMapPoint = {
   longitude: number | null
   latitude: number | null
   geocodeStatus: 'pending' | 'success' | 'failed' | 'skipped'
+  source: StructuredDataSource
+  verified: boolean
+  formattedAddress: string | null
+}
+
+type StructuredItineraryOverview = {
+  routeSummary: string
+  pace: string
+  bestFor: string[]
+  highlights: string[]
+  dataBasis: string[]
+}
+
+type StructuredItinerarySupplement = StructuredVerification & {
+  title: string
+  items: string[]
+}
+
+type StructuredItineraryDataQualityNote = StructuredVerification & {
+  label: string
+  detail: string
 }
 
 export type StructuredItinerary = {
-  version: 1 | 2
+  version: 1 | 2 | 3
   title: string
   summary: string
   recordType: string
+  overview: StructuredItineraryOverview
   days: StructuredItineraryDay[]
   mapPoints: StructuredItineraryMapPoint[]
+  verifiedMapPoints: StructuredItineraryMapPoint[]
   notes: string[]
+  supplements: StructuredItinerarySupplement[]
+  dataQualityNotes: StructuredItineraryDataQualityNote[]
   returnTrip: StructuredItineraryReturnTrip | null
 }
 
@@ -539,6 +604,445 @@ function readStringList(value: unknown) {
     : []
 }
 
+function scrubUnverifiedSupplierFacts(text: string) {
+  return text
+    .replace(/\b[CGDZTKS]\d{1,5}\s*次?\b/gi, '班次待核对')
+    .replace(/\b[A-Z]{2}\d{3,4}\b/g, '班次待核对')
+    .replace(
+      /(?:¥|￥|RMB|人民币)\s*\d+(?:\.\d+)?(?:\s*元)?(?:\s*\/?\s*(?:人|晚|间|张|起))?/gi,
+      '价格待核对',
+    )
+    .replace(
+      /\d+(?:\.\d+)?\s*元(?:\s*\/?\s*(?:人|晚|间|张|起|左右))?/g,
+      '价格待核对',
+    )
+    .replace(/(?:评分|得分)\s*[:：]?\s*\d(?:\.\d)?\s*分?/g, '评分待核对')
+    .replace(/\d(?:\.\d)?\s*分(?!钟)(?:好评|评分)?/g, '评分待核对')
+    .replace(
+      /(?:营业中|暂停营业|今日开放|当前开放|目前开放|开放中|闭馆中|已闭馆|正在营业)/g,
+      '营业状态待核对',
+    )
+}
+
+function scrubLikelyLodgingName(text: string) {
+  return text.replace(
+    /[\u4e00-\u9fa5A-Za-z0-9·（）() -]{2,28}(?:酒店|宾馆|民宿|客栈|度假村)/g,
+    (match, offset: number, fullText: string) => {
+      const tail = fullText.slice(offset + match.length, offset + match.length + 4)
+
+      if (/名|供应商|接口|数据/.test(tail) || /具体酒店$/.test(match)) {
+        return match
+      }
+
+      return '住宿建议待核对'
+    },
+  )
+}
+
+function scrubModelMarkdown(value: string) {
+  return scrubLikelyLodgingName(scrubUnverifiedSupplierFacts(value))
+}
+
+function readUnverifiedString(value: unknown) {
+  return scrubLikelyLodgingName(scrubUnverifiedSupplierFacts(readString(value)))
+}
+
+function readUnverifiedOptionalString(value: unknown) {
+  const text = readUnverifiedString(value)
+
+  return text || null
+}
+
+function readUnverifiedStringList(value: unknown) {
+  return Array.isArray(value)
+    ? value.map(readUnverifiedString).filter(Boolean)
+    : []
+}
+
+function isLikelySpecificLodgingName(value: string | null | undefined) {
+  if (!value) {
+    return false
+  }
+
+  if (/酒店名|酒店供应商|酒店接口|住宿区域|住宿建议/.test(value)) {
+    return false
+  }
+
+  return /(酒店|宾馆|民宿|客栈|度假村)/.test(value)
+}
+
+function isGenericUnverifiedPlaceName(value: string | null | undefined) {
+  return Boolean(
+    value &&
+      /住宿建议待核对|交通便利区域|按当天情况|未命名安排/.test(value),
+  )
+}
+
+function normalizeDataSource(value: unknown): StructuredDataSource {
+  const source = readString(value)
+
+  return source === 'user' ||
+    source === 'amap' ||
+    source === 'weather' ||
+    source === 'llm_advice'
+    ? source
+    : 'llm_advice'
+}
+
+function readVerified(value: unknown, fallback = false) {
+  return typeof value === 'boolean' ? value : fallback
+}
+
+function buildAdviceVerification(
+  source: StructuredDataSource = 'llm_advice',
+): StructuredVerification {
+  return {
+    source,
+    verified: source === 'user' || source === 'weather' || source === 'amap',
+  }
+}
+
+function readVerification(
+  record: Record<string, unknown>,
+  fallbackSource: StructuredDataSource = 'llm_advice',
+): StructuredVerification {
+  const source = normalizeDataSource(record.source ?? fallbackSource)
+
+  return {
+    source,
+    verified: readVerified(
+      record.verified,
+      source === 'user' || source === 'weather' || source === 'amap',
+    ),
+  }
+}
+
+function readAdviceVerification(
+  record: Record<string, unknown>,
+): StructuredVerification {
+  const source = normalizeDataSource(record.source)
+
+  if (source === 'user') {
+    return {
+      source,
+      verified: true,
+    }
+  }
+
+  return buildAdviceVerification()
+}
+
+function readOverview(
+  value: unknown,
+  fallback: StructuredItineraryOverview,
+): StructuredItineraryOverview {
+  const record = readRecord(value)
+
+  if (!record) {
+    return fallback
+  }
+
+  return {
+    routeSummary:
+      readUnverifiedString(record.routeSummary) || fallback.routeSummary,
+    pace: readUnverifiedString(record.pace) || fallback.pace,
+    bestFor: readUnverifiedStringList(record.bestFor).length
+      ? readUnverifiedStringList(record.bestFor)
+      : fallback.bestFor,
+    highlights: readUnverifiedStringList(record.highlights).length
+      ? readUnverifiedStringList(record.highlights)
+      : fallback.highlights,
+    dataBasis: readUnverifiedStringList(record.dataBasis).length
+      ? readUnverifiedStringList(record.dataBasis)
+      : fallback.dataBasis,
+  }
+}
+
+function buildDefaultOverview(
+  title: string,
+  summary: string,
+): StructuredItineraryOverview {
+  return {
+    routeSummary: summary,
+    pace: '轻松均衡',
+    bestFor: ['希望获得可执行行程的旅行者'],
+    highlights: [title],
+    dataBasis: [
+      '用户填写的目的地、天数、出发地与偏好',
+      '已配置服务返回的天气和地图坐标',
+      '未接入供应商接口的数据不会作为事实展示',
+    ],
+  }
+}
+
+function buildDefaultDataQualityNotes(): StructuredItineraryDataQualityNote[] {
+  return [
+    {
+      ...buildAdviceVerification('user'),
+      label: '可验证输入',
+      detail: '目的地、出发地、旅行天数、偏好和补充要求来自用户输入或偏好卡片。',
+    },
+    {
+      ...buildAdviceVerification('llm_advice'),
+      label: '未接入供应商数据',
+      detail:
+        '未接入火车、酒店、门票供应商接口，因此不会展示无来源的车次、票价、酒店名、营业状态、评分或门票价格。',
+    },
+    {
+      ...buildAdviceVerification('llm_advice'),
+      label: '规划建议',
+      detail:
+        '游玩顺序、停留时长、交通衔接和风险提示为规划建议，出行前仍需核对实时交通、开放时间和预约规则。',
+    },
+  ]
+}
+
+function buildDefaultSupplements(
+  days: StructuredItineraryDay[],
+): StructuredItinerarySupplement[] {
+  const placeNames = days
+    .flatMap((day) => day.placeCards.map((place) => place.name))
+    .slice(0, 6)
+
+  return [
+    {
+      ...buildAdviceVerification(),
+      title: '核心游览要点',
+      items: placeNames.length
+        ? placeNames.map((name) => `${name}建议提前核对开放时间、预约规则和天气影响。`)
+        : ['优先保留每天最想去的核心地点，其余安排按体力和天气弹性调整。'],
+    },
+    {
+      ...buildAdviceVerification(),
+      title: '住宿区域建议',
+      items: [
+        '建议选择交通便利、便于次日出发和晚间返回的区域。',
+        '未接入酒店供应商接口，因此不展示具体酒店名、房态或价格。',
+      ],
+    },
+    {
+      ...buildAdviceVerification(),
+      title: '安全与核对清单',
+      items: [
+        '出行前核对开放时间、预约要求、天气预警和实际交通。',
+        '涉及长距离移动时预留机动时间，避免把行程排满。',
+      ],
+    },
+  ]
+}
+
+function readTransportCards(value: unknown): StructuredItineraryTransportCard[] {
+  return Array.isArray(value)
+    ? value
+        .map((cardValue) => {
+          const record = readRecord(cardValue)
+
+          if (!record) {
+            return null
+          }
+
+          const route = readUnverifiedString(record.route)
+          const reason = readUnverifiedString(record.reason)
+
+          if (!route && !reason) {
+            return null
+          }
+
+          return {
+            ...readAdviceVerification(record),
+            title: readUnverifiedString(record.title) || '交通切换建议',
+            mode: readUnverifiedOptionalString(record.mode),
+            route: route || '按当天实际位置衔接',
+            departureText: readUnverifiedOptionalString(record.departureText),
+            arrivalText: readUnverifiedOptionalString(record.arrivalText),
+            durationText: readUnverifiedOptionalString(record.durationText),
+            distanceText: readUnverifiedOptionalString(record.distanceText),
+            reason: reason || '作为规划建议展示，出行前请核对实际交通。',
+          } satisfies StructuredItineraryTransportCard
+        })
+        .filter(
+          (card): card is StructuredItineraryTransportCard => Boolean(card),
+        )
+    : []
+}
+
+function readTimelineItems(
+  value: unknown,
+  fallbackItems: StructuredItineraryItem[],
+): StructuredItineraryTimelineItem[] {
+  const timelineItems = Array.isArray(value)
+    ? value
+        .map((itemValue) => {
+          const itemRecord = readRecord(itemValue)
+
+          if (!itemRecord) {
+            return null
+          }
+
+          const title =
+            readUnverifiedString(itemRecord.title) ||
+            readUnverifiedString(itemRecord.placeName) ||
+            '未命名安排'
+          const description = readUnverifiedString(itemRecord.description)
+          const rawPlaceName = readOptionalString(itemRecord.placeName)
+          const placeName = isLikelySpecificLodgingName(rawPlaceName)
+            ? null
+            : readUnverifiedOptionalString(itemRecord.placeName)
+
+          return {
+            timeOfDay: readUnverifiedOptionalString(itemRecord.timeOfDay),
+            timeWindow: readUnverifiedOptionalString(itemRecord.timeWindow),
+            durationText: readUnverifiedOptionalString(itemRecord.durationText),
+            title,
+            description: description || title,
+            reason: readUnverifiedOptionalString(itemRecord.reason),
+            placeName,
+            city: readUnverifiedOptionalString(itemRecord.city),
+            addressHint: readUnverifiedOptionalString(itemRecord.addressHint),
+            transport: readUnverifiedOptionalString(itemRecord.transport),
+            transition: readTransition(itemRecord.transition),
+            ...readAdviceVerification(itemRecord),
+          } satisfies StructuredItineraryTimelineItem
+        })
+        .filter(
+          (item): item is StructuredItineraryTimelineItem => Boolean(item),
+        )
+    : []
+
+  return timelineItems.length
+    ? timelineItems
+    : fallbackItems.map((item) => ({
+        ...item,
+        ...buildAdviceVerification(),
+      }))
+}
+
+function readPlaceCards(value: unknown): StructuredItineraryPlaceCard[] {
+  return Array.isArray(value)
+    ? value
+        .map((cardValue) => {
+          const record = readRecord(cardValue)
+
+          if (!record) {
+            return null
+          }
+
+          const rawName = readString(record.name)
+          const name = readUnverifiedString(record.name)
+
+          if (!name || isLikelySpecificLodgingName(rawName)) {
+            return null
+          }
+
+          return {
+            ...readAdviceVerification(record),
+            name,
+            city: readUnverifiedOptionalString(record.city),
+            addressHint: readUnverifiedOptionalString(record.addressHint),
+            description:
+              readUnverifiedString(record.description) ||
+              `${name}可作为当天行程中的候选地点。`,
+            durationText: readUnverifiedOptionalString(record.durationText),
+            visitTips: readUnverifiedStringList(record.visitTips),
+          } satisfies StructuredItineraryPlaceCard
+        })
+        .filter((card): card is StructuredItineraryPlaceCard => Boolean(card))
+    : []
+}
+
+function readLodgingAdvice(value: unknown): StructuredItineraryLodgingAdvice[] {
+  return Array.isArray(value)
+    ? value
+        .map((adviceValue) => {
+          const record = readRecord(adviceValue)
+
+          if (!record) {
+            return null
+          }
+
+          const area = readUnverifiedString(record.area)
+          const reason = readUnverifiedString(record.reason)
+
+          if (!area && !reason) {
+            return null
+          }
+
+          return {
+            ...readAdviceVerification(record),
+            area: isLikelySpecificLodgingName(area)
+              ? '交通便利区域'
+              : area || '交通便利区域',
+            reason: reason || '住宿区域建议仅供规划参考，预订前请自行核对。',
+          } satisfies StructuredItineraryLodgingAdvice
+        })
+        .filter(
+          (advice): advice is StructuredItineraryLodgingAdvice =>
+            Boolean(advice),
+        )
+    : []
+}
+
+function readSupplements(value: unknown): StructuredItinerarySupplement[] {
+  return Array.isArray(value)
+    ? value
+        .map((supplementValue) => {
+          const record = readRecord(supplementValue)
+
+          if (!record) {
+            return null
+          }
+
+          const title = readUnverifiedString(record.title)
+          const items = readUnverifiedStringList(record.items)
+
+          if (!title || !items.length) {
+            return null
+          }
+
+          return {
+            ...readAdviceVerification(record),
+            title,
+            items,
+          } satisfies StructuredItinerarySupplement
+        })
+        .filter(
+          (supplement): supplement is StructuredItinerarySupplement =>
+            Boolean(supplement),
+        )
+    : []
+}
+
+function readDataQualityNotes(
+  value: unknown,
+): StructuredItineraryDataQualityNote[] {
+  return Array.isArray(value)
+    ? value
+        .map((noteValue) => {
+          const record = readRecord(noteValue)
+
+          if (!record) {
+            return null
+          }
+
+          const label = readUnverifiedString(record.label)
+          const detail = readUnverifiedString(record.detail)
+
+          if (!label || !detail) {
+            return null
+          }
+
+          return {
+            ...readVerification(record),
+            label,
+            detail,
+          } satisfies StructuredItineraryDataQualityNote
+        })
+        .filter(
+          (note): note is StructuredItineraryDataQualityNote => Boolean(note),
+        )
+    : []
+}
+
 function normalizeGeocodeStatus(
   value: unknown,
 ): StructuredItineraryMapPoint['geocodeStatus'] {
@@ -552,6 +1056,72 @@ function normalizeGeocodeStatus(
     : 'pending'
 }
 
+function readMapPoints(value: unknown): StructuredItineraryMapPoint[] {
+  return Array.isArray(value)
+    ? value
+        .map((pointValue, index) => {
+          const pointRecord = readRecord(pointValue)
+
+          if (!pointRecord) {
+            return null
+          }
+
+          const rawName =
+            readString(pointRecord.name) ||
+            readString(pointRecord.placeName) ||
+            readString(pointRecord.title)
+          const name = scrubUnverifiedSupplierFacts(rawName)
+
+          if (!name || isLikelySpecificLodgingName(rawName)) {
+            return null
+          }
+
+          const longitude = readNullableNumber(pointRecord.longitude)
+          const latitude = readNullableNumber(pointRecord.latitude)
+          const geocodeStatus = normalizeGeocodeStatus(
+            pointRecord.geocodeStatus,
+          )
+          const hasSuccessfulCoordinate =
+            longitude !== null && latitude !== null && geocodeStatus === 'success'
+          const source = hasSuccessfulCoordinate
+            ? normalizeDataSource(pointRecord.source ?? 'amap')
+            : normalizeDataSource(pointRecord.source ?? 'llm_advice')
+          const verified = readVerified(
+            pointRecord.verified,
+            source === 'amap' && hasSuccessfulCoordinate,
+          )
+          const formattedAddress =
+            readUnverifiedOptionalString(pointRecord.formattedAddress) ??
+            (verified
+              ? readUnverifiedOptionalString(pointRecord.addressHint) ??
+                readUnverifiedOptionalString(pointRecord.city)
+              : null)
+
+          return {
+            day: readPositiveInteger(pointRecord.day, 1),
+            order: readPositiveInteger(pointRecord.order, index + 1),
+            name,
+            city: readUnverifiedOptionalString(pointRecord.city),
+            addressHint: readUnverifiedOptionalString(pointRecord.addressHint),
+            longitude,
+            latitude,
+            geocodeStatus,
+            source,
+            verified:
+              verified &&
+              source === 'amap' &&
+              longitude !== null &&
+              latitude !== null &&
+              geocodeStatus === 'success',
+            formattedAddress: verified ? formattedAddress : null,
+          } satisfies StructuredItineraryMapPoint
+        })
+        .filter((point): point is StructuredItineraryMapPoint =>
+          Boolean(point),
+        )
+    : []
+}
+
 function readTransition(value: unknown): StructuredItineraryTransition | null {
   const record = readRecord(value)
 
@@ -560,14 +1130,14 @@ function readTransition(value: unknown): StructuredItineraryTransition | null {
   }
 
   const transition = {
-    fromPlaceName: readOptionalString(record.fromPlaceName),
-    toPlaceName: readOptionalString(record.toPlaceName),
+    fromPlaceName: readUnverifiedOptionalString(record.fromPlaceName),
+    toPlaceName: readUnverifiedOptionalString(record.toPlaceName),
     transportMode:
-      readOptionalString(record.transportMode) ??
-      readOptionalString(record.transport),
-    durationText: readOptionalString(record.durationText),
-    distanceText: readOptionalString(record.distanceText),
-    note: readOptionalString(record.note),
+      readUnverifiedOptionalString(record.transportMode) ??
+      readUnverifiedOptionalString(record.transport),
+    durationText: readUnverifiedOptionalString(record.durationText),
+    distanceText: readUnverifiedOptionalString(record.distanceText),
+    note: readUnverifiedOptionalString(record.note),
   }
 
   return Object.values(transition).some(Boolean) ? transition : null
@@ -582,18 +1152,18 @@ function readReturnTrip(
     return null
   }
 
-  const description = readString(record.description)
+  const description = readUnverifiedString(record.description)
 
   return {
-    fromCity: readOptionalString(record.fromCity),
-    toCity: readOptionalString(record.toCity),
-    departureTime: readOptionalString(record.departureTime),
-    arrivalTime: readOptionalString(record.arrivalTime),
-    transportMode: readOptionalString(record.transportMode),
-    durationText: readOptionalString(record.durationText),
-    distanceText: readOptionalString(record.distanceText),
+    fromCity: readUnverifiedOptionalString(record.fromCity),
+    toCity: readUnverifiedOptionalString(record.toCity),
+    departureTime: readUnverifiedOptionalString(record.departureTime),
+    arrivalTime: readUnverifiedOptionalString(record.arrivalTime),
+    transportMode: readUnverifiedOptionalString(record.transportMode),
+    durationText: readUnverifiedOptionalString(record.durationText),
+    distanceText: readUnverifiedOptionalString(record.distanceText),
     description: description || '最后一天晚上返回出发城市，到家后结束行程。',
-    note: readOptionalString(record.note),
+    note: readUnverifiedOptionalString(record.note),
   }
 }
 
@@ -605,13 +1175,25 @@ function buildMinimalStructuredItinerary(
   returnTrip: StructuredItineraryReturnTrip | null = null,
 ): StructuredItinerary {
   return {
-    version: 2,
+    version: 3,
     title,
     summary,
     recordType,
+    overview: buildDefaultOverview(title, summary),
     days: [],
     mapPoints: [],
+    verifiedMapPoints: [],
     notes,
+    supplements: [
+      {
+        ...buildAdviceVerification(),
+        title: '规划说明',
+        items: notes.length
+          ? notes
+          : ['当前历史记录缺少可解析结构，已保留原方案文本供继续优化。'],
+      },
+    ],
+    dataQualityNotes: buildDefaultDataQualityNotes(),
     returnTrip,
   }
 }
@@ -622,9 +1204,13 @@ function buildMapPointsFromDays(days: StructuredItineraryDay[]) {
 
   for (const day of days) {
     for (const item of day.items) {
-      const name = item.placeName ?? item.title
+      const name = item.placeName
 
-      if (!name) {
+      if (
+        !name ||
+        isLikelySpecificLodgingName(name) ||
+        isGenericUnverifiedPlaceName(name)
+      ) {
         continue
       }
 
@@ -639,6 +1225,9 @@ function buildMapPointsFromDays(days: StructuredItineraryDay[]) {
         longitude: null,
         latitude: null,
         geocodeStatus: 'pending',
+        source: 'llm_advice',
+        verified: false,
+        formattedAddress: null,
       })
     }
   }
@@ -676,22 +1265,30 @@ function normalizeStructuredItinerary(
                   }
 
                   const title =
-                    readString(itemRecord.title) ||
-                    readString(itemRecord.placeName) ||
+                    readUnverifiedString(itemRecord.title) ||
+                    readUnverifiedString(itemRecord.placeName) ||
                     '未命名安排'
-                  const description = readString(itemRecord.description)
+                  const description = readUnverifiedString(itemRecord.description)
+                  const rawPlaceName = readOptionalString(itemRecord.placeName)
+                  const placeName = isLikelySpecificLodgingName(rawPlaceName)
+                    ? null
+                    : readUnverifiedOptionalString(itemRecord.placeName)
 
                   return {
-                    timeOfDay: readOptionalString(itemRecord.timeOfDay),
-                    timeWindow: readOptionalString(itemRecord.timeWindow),
-                    durationText: readOptionalString(itemRecord.durationText),
+                    timeOfDay: readUnverifiedOptionalString(itemRecord.timeOfDay),
+                    timeWindow: readUnverifiedOptionalString(itemRecord.timeWindow),
+                    durationText: readUnverifiedOptionalString(
+                      itemRecord.durationText,
+                    ),
                     title,
                     description: description || title,
-                    reason: readOptionalString(itemRecord.reason),
-                    placeName: readOptionalString(itemRecord.placeName),
-                    city: readOptionalString(itemRecord.city),
-                    addressHint: readOptionalString(itemRecord.addressHint),
-                    transport: readOptionalString(itemRecord.transport),
+                    reason: readUnverifiedOptionalString(itemRecord.reason),
+                    placeName,
+                    city: readUnverifiedOptionalString(itemRecord.city),
+                    addressHint: readUnverifiedOptionalString(
+                      itemRecord.addressHint,
+                    ),
+                    transport: readUnverifiedOptionalString(itemRecord.transport),
                     transition: readTransition(itemRecord.transition),
                   } satisfies StructuredItineraryItem
                 })
@@ -700,64 +1297,81 @@ function normalizeStructuredItinerary(
                 )
             : []
 
+          const fallbackDay =
+            fallback.days.find((day) => day.day === dayNumber) ??
+            fallback.days[index] ??
+            null
+          const strategy =
+            readUnverifiedString(dayRecord.strategy) ||
+            fallbackDay?.strategy ||
+            `围绕${readOptionalString(dayRecord.city) ?? fallbackDay?.city ?? '当天目的地'}安排顺路、低风险且可调整的游玩节奏。`
+          const timelineItems = readTimelineItems(
+            dayRecord.timelineItems,
+            items,
+          )
+          const transportCards = readTransportCards(dayRecord.transportCards)
+          const placeCards = readPlaceCards(dayRecord.placeCards)
+          const lodgingAreaAdvice = readLodgingAdvice(
+            dayRecord.lodgingAreaAdvice,
+          )
+
           return {
             day: dayNumber,
             title:
-              readString(dayRecord.title) ||
+              readUnverifiedString(dayRecord.title) ||
               `Day ${dayNumber}`,
-            city: readOptionalString(dayRecord.city),
+            city: readUnverifiedOptionalString(dayRecord.city),
             items,
-            alternatives: readStringList(dayRecord.alternatives),
-            riskNotes: readStringList(dayRecord.riskNotes),
+            strategy,
+            timelineItems: timelineItems.length
+              ? timelineItems
+              : fallbackDay?.timelineItems ?? [],
+            transportCards: transportCards.length
+              ? transportCards
+              : fallbackDay?.transportCards ?? [],
+            placeCards: placeCards.length ? placeCards : fallbackDay?.placeCards ?? [],
+            lodgingAreaAdvice: lodgingAreaAdvice.length
+              ? lodgingAreaAdvice
+              : fallbackDay?.lodgingAreaAdvice ?? [],
+            alternatives: readUnverifiedStringList(dayRecord.alternatives),
+            riskNotes: readUnverifiedStringList(dayRecord.riskNotes),
           } satisfies StructuredItineraryDay
         })
         .filter((day): day is StructuredItineraryDay => Boolean(day))
     : fallback.days
 
-  const mapPoints = Array.isArray(record.mapPoints)
-    ? record.mapPoints
-        .map((pointValue, index) => {
-          const pointRecord = readRecord(pointValue)
-
-          if (!pointRecord) {
-            return null
-          }
-
-          const name =
-            readString(pointRecord.name) ||
-            readString(pointRecord.placeName) ||
-            readString(pointRecord.title)
-
-          if (!name) {
-            return null
-          }
-
-          return {
-            day: readPositiveInteger(pointRecord.day, 1),
-            order: readPositiveInteger(pointRecord.order, index + 1),
-            name,
-            city: readOptionalString(pointRecord.city),
-            addressHint: readOptionalString(pointRecord.addressHint),
-            longitude: readNullableNumber(pointRecord.longitude),
-            latitude: readNullableNumber(pointRecord.latitude),
-            geocodeStatus: normalizeGeocodeStatus(pointRecord.geocodeStatus),
-          } satisfies StructuredItineraryMapPoint
-        })
-        .filter((point): point is StructuredItineraryMapPoint =>
-          Boolean(point),
-        )
-    : []
+  const parsedMapPoints = readMapPoints(record.mapPoints)
+  const completedMapPoints = parsedMapPoints.length
+    ? parsedMapPoints
+    : buildMapPointsFromDays(days)
+  const parsedVerifiedMapPoints = readMapPoints(record.verifiedMapPoints).filter(
+    (point) => point.verified,
+  )
+  const completedVerifiedMapPoints = parsedVerifiedMapPoints.length
+    ? parsedVerifiedMapPoints
+    : completedMapPoints.filter((point) => point.verified)
+  const version = readPositiveInteger(record.version, fallback.version)
 
   return {
-    version: readPositiveInteger(record.version, fallback.version) === 1 ? 1 : 2,
-    title: readString(record.title) || fallback.title,
-    summary: readString(record.summary) || fallback.summary,
+    version: version === 1 || version === 2 ? version : 3,
+    title: readUnverifiedString(record.title) || fallback.title,
+    summary: readUnverifiedString(record.summary) || fallback.summary,
     recordType: readString(record.recordType) || fallback.recordType,
+    overview: readOverview(record.overview, fallback.overview),
     days,
-    mapPoints: mapPoints.length ? mapPoints : buildMapPointsFromDays(days),
-    notes: readStringList(record.notes).length
-      ? readStringList(record.notes)
+    mapPoints: completedMapPoints,
+    verifiedMapPoints: completedVerifiedMapPoints.length
+      ? completedVerifiedMapPoints
+      : fallback.verifiedMapPoints,
+    notes: readUnverifiedStringList(record.notes).length
+      ? readUnverifiedStringList(record.notes)
       : fallback.notes,
+    supplements: readSupplements(record.supplements).length
+      ? readSupplements(record.supplements)
+      : fallback.supplements,
+    dataQualityNotes: readDataQualityNotes(record.dataQualityNotes).length
+      ? readDataQualityNotes(record.dataQualityNotes)
+      : fallback.dataQualityNotes,
     returnTrip: readReturnTrip(record.returnTrip) ?? fallback.returnTrip,
   }
 }
@@ -813,8 +1427,10 @@ function applyStructuredLlmContent(
     )
   }
 
-  const markdown =
-    readString(parsedOutput?.markdown) || fallbackPlan.plan.content
+  const rawMarkdown = readString(parsedOutput?.markdown)
+  const markdown = rawMarkdown
+    ? scrubModelMarkdown(rawMarkdown)
+    : fallbackPlan.plan.content
   const structuredContent = normalizeStructuredItinerary(
     parsedOutput?.structuredItinerary,
     {
@@ -958,6 +1574,88 @@ function completeStructuredItem({
   return completedItem
 }
 
+function buildTimelineItemsFromItems(
+  items: StructuredItineraryItem[],
+): StructuredItineraryTimelineItem[] {
+  return items.map((item) => ({
+    ...item,
+    ...buildAdviceVerification(),
+  }))
+}
+
+function buildTransportCardsFromItems(
+  items: StructuredItineraryItem[],
+): StructuredItineraryTransportCard[] {
+  return items
+    .map((item) => {
+      const transition = item.transition
+
+      if (!transition) {
+        return null
+      }
+
+      const card: StructuredItineraryTransportCard = {
+        ...buildAdviceVerification(),
+        title: `${transition.fromPlaceName ?? '上一地点'} -> ${transition.toPlaceName ?? item.title}`,
+        mode: transition.transportMode ?? item.transport,
+        route: `${transition.fromPlaceName ?? '上一地点'} -> ${transition.toPlaceName ?? item.title}`,
+        departureText: transition.fromPlaceName,
+        arrivalText: transition.toPlaceName ?? item.placeName ?? item.title,
+        durationText: transition.durationText,
+        distanceText: transition.distanceText,
+        reason:
+          item.reason ??
+          transition.note ??
+          '根据当天地点顺序给出的交通衔接建议，出行前请核对实际路线。',
+      }
+
+      return card
+    })
+    .filter((card): card is StructuredItineraryTransportCard => Boolean(card))
+}
+
+function buildPlaceCardsFromItems(
+  items: StructuredItineraryItem[],
+): StructuredItineraryPlaceCard[] {
+  return items
+    .map((item) => {
+      const name = item.placeName ?? item.title
+
+      if (!name || isGenericUnverifiedPlaceName(name)) {
+        return null
+      }
+
+      return {
+        ...buildAdviceVerification(),
+        name,
+        city: item.city,
+        addressHint: item.addressHint,
+        description: item.description,
+        durationText: item.durationText,
+        visitTips: [
+          item.reason ??
+            '该地点作为行程建议展示，出行前请核对开放时间和预约规则。',
+        ],
+      } satisfies StructuredItineraryPlaceCard
+    })
+    .filter((card): card is StructuredItineraryPlaceCard => Boolean(card))
+}
+
+function buildLodgingAdviceForDay(
+  day: StructuredItineraryDay | null,
+): StructuredItineraryLodgingAdvice[] {
+  const city = day?.city ?? '当天目的地'
+
+  return [
+    {
+      ...buildAdviceVerification(),
+      area: `${city}交通便利区域`,
+      reason:
+        '建议选择便于次日出发、就餐和返程衔接的住宿区域；未接入酒店供应商接口，因此不展示具体酒店名或价格。',
+    },
+  ]
+}
+
 function completeStructuredDay({
   day,
   fallbackDay,
@@ -1007,13 +1705,36 @@ function completeStructuredDay({
     return completedItem
   })
 
-  return {
+  const completedDay = {
     day: dayNumber,
     title:
       firstText(day?.title, fallbackDay?.title) ??
       `Day ${dayNumber}`,
     city: firstText(day?.city, fallbackDay?.city),
     items,
+    strategy:
+      firstText(day?.strategy, fallbackDay?.strategy) ??
+      `围绕第 ${dayNumber} 天的核心地点安排顺路、低风险且可调整的游玩节奏。`,
+    timelineItems: day?.timelineItems.length
+      ? day.timelineItems
+      : fallbackDay?.timelineItems.length
+        ? fallbackDay.timelineItems
+        : buildTimelineItemsFromItems(items),
+    transportCards: day?.transportCards.length
+      ? day.transportCards
+      : fallbackDay?.transportCards.length
+        ? fallbackDay.transportCards
+        : buildTransportCardsFromItems(items),
+    placeCards: day?.placeCards.length
+      ? day.placeCards
+      : fallbackDay?.placeCards.length
+        ? fallbackDay.placeCards
+        : buildPlaceCardsFromItems(items),
+    lodgingAreaAdvice: day?.lodgingAreaAdvice.length
+      ? day.lodgingAreaAdvice
+      : fallbackDay?.lodgingAreaAdvice.length
+        ? fallbackDay.lodgingAreaAdvice
+        : [],
     alternatives: day?.alternatives.length
       ? day.alternatives
       : fallbackDay?.alternatives.length
@@ -1031,6 +1752,13 @@ function completeStructuredDay({
             '出行前请核对开放时间、预约规则和交通班次。',
             '天气、路况和排队情况可能变化，建议保留机动时间。',
           ],
+  } satisfies StructuredItineraryDay
+
+  return {
+    ...completedDay,
+    lodgingAreaAdvice: completedDay.lodgingAreaAdvice.length
+      ? completedDay.lodgingAreaAdvice
+      : buildLodgingAdviceForDay(completedDay),
   } satisfies StructuredItineraryDay
 }
 
@@ -1104,17 +1832,29 @@ function completeStructuredItineraryWithFallback(
         : fallback.mapPoints
 
   return {
-    version: 2,
+    version: 3,
     title: itinerary.title || fallback.title,
     summary: itinerary.summary || fallback.summary,
     recordType: itinerary.recordType || fallback.recordType,
+    overview: itinerary.overview ?? fallback.overview,
     days,
     mapPoints: completedMapPoints,
+    verifiedMapPoints: completedMapPoints.filter((point) => point.verified),
     notes: itinerary.notes.length
       ? itinerary.notes
       : fallback.notes.length
         ? fallback.notes
         : ['出行前请核对开放时间、天气、路况和交通班次。'],
+    supplements: itinerary.supplements.length
+      ? itinerary.supplements
+      : fallback.supplements.length
+        ? fallback.supplements
+        : buildDefaultSupplements(days),
+    dataQualityNotes: itinerary.dataQualityNotes.length
+      ? itinerary.dataQualityNotes
+      : fallback.dataQualityNotes.length
+        ? fallback.dataQualityNotes
+        : buildDefaultDataQualityNotes(),
     returnTrip: completeReturnTrip(
       itinerary.returnTrip,
       fallback.returnTrip,
@@ -1177,19 +1917,32 @@ function forcePlanTitle(
 function getStructuredOutputInstructions(recordType: string) {
   return [
     '你必须只输出一个 JSON 对象，不要输出 Markdown 代码围栏，也不要输出额外解释。',
+    '先生成结构化 JSON；坐标、地址和供应商类事实由本地服务补全或过滤。',
+    '禁止编造供应商数据：没有真实来源时，不要输出车次/航班号、票价、酒店名、酒店价格、评分、营业状态、门票价格。',
+    '所有由你根据常识和偏好给出的安排、交通衔接、停留时长、风险提示，都必须标记为 source: "llm_advice", verified: false。',
+    'mapPoints 只放真实可搜索的地点名，longitude/latitude 必须为 null，geocodeStatus 必须为 "pending"，source 必须为 "llm_advice"，verified 必须为 false；verifiedMapPoints 必须输出空数组，由本地高德 geocode 成功后补齐。',
+    '只有直接复述用户输入的信息可以标记 source: "user", verified: true；只有直接复述真实天气参考的信息可以标记 source: "weather", verified: true。',
     'JSON 顶层格式必须为：',
     '{',
     '  "markdown": "完整 Markdown 旅行方案文本",',
     '  "structuredItinerary": {',
-    '    "version": 2,',
+    '    "version": 3,',
     `    "recordType": "${recordType}",`,
     '    "title": "方案标题",',
     '    "summary": "一句话摘要",',
+    '    "overview": {',
+    '      "routeSummary": "路线/城市/最后一晚回程的概览",',
+    '      "pace": "轻松/紧凑/亲子友好/自驾缓冲等节奏判断",',
+    '      "bestFor": ["适合的人群或同行方式"],',
+    '      "highlights": ["本方案最值得保留的重点"],',
+    '      "dataBasis": ["用户输入", "真实天气参考或其限制", "地图坐标由本地高德补全"]',
+    '    },',
     '    "days": [',
     '      {',
     '        "day": 1,',
     '        "title": "Day 1 标题",',
     '        "city": "城市名",',
+    '        "strategy": "当天打法：节奏、顺路逻辑、体力和风险控制",',
     '        "items": [',
     '          {',
     '            "timeOfDay": "上午/下午/晚上或具体时段",',
@@ -1212,6 +1965,64 @@ function getStructuredOutputInstructions(recordType: string) {
     '            }',
     '          }',
     '        ],',
+    '        "timelineItems": [',
+    '          {',
+    '            "source": "llm_advice",',
+    '            "verified": false,',
+    '            "timeOfDay": "上午",',
+    '            "timeWindow": "09:00-11:30",',
+    '            "durationText": "建议停留 2 小时",',
+    '            "title": "安排标题",',
+    '            "description": "详细说明",',
+    '            "reason": "规划理由",',
+    '            "placeName": "地点名或 null",',
+    '            "city": "城市名",',
+    '            "addressHint": "区域或地址线索，不确定则 null",',
+    '            "transport": "本段通行方式或 null",',
+    '            "transition": {',
+    '              "fromPlaceName": "上一地点",',
+    '              "toPlaceName": "本安排地点",',
+    '              "transportMode": "步行/地铁/打车/自驾/公共交通等",',
+    '              "durationText": "约 20 分钟或按实际核对",',
+    '              "distanceText": "约 3 公里或按实际核对",',
+    '              "note": "仅作规划参考，出行前核对"',
+    '            }',
+    '          }',
+    '        ],',
+    '        "transportCards": [',
+    '          {',
+    '            "source": "llm_advice",',
+    '            "verified": false,',
+    '            "title": "交通切换建议",',
+    '            "mode": "地铁/打车/自驾/步行/公共交通等",',
+    '            "route": "上一地点 -> 下一地点；不要写车次/航班号/票价",',
+    '            "departureText": "上一地点或出发区域",',
+    '            "arrivalText": "下一地点或到达区域",',
+    '            "durationText": "约耗时；不确定写按实际核对",',
+    '            "distanceText": "约距离；不确定写按实际核对",',
+    '            "reason": "为什么这样切换"',
+    '          }',
+    '        ],',
+    '        "placeCards": [',
+    '          {',
+    '            "source": "llm_advice",',
+    '            "verified": false,',
+    '            "name": "景点/街区/区域名；不要写酒店名",',
+    '            "city": "城市名",',
+    '            "addressHint": "可用于地图搜索的区域线索",',
+    '            "description": "为什么值得安排，不要写门票价格/营业状态/评分",',
+    '            "durationText": "建议停留时长",',
+    '            "visitTips": ["预约、天气、排队或体力提示；不要写无来源票价和营业状态"]',
+    '          }',
+    '        ],',
+    '        "lodgingAreaAdvice": [',
+    '          {',
+    '            "source": "llm_advice",',
+    '            "verified": false,',
+    '            "area": "住宿区域/商圈/交通节点，不要写具体酒店名",',
+    '            "reason": "为什么适合住在这个区域"',
+    '          }',
+    '        ],',
     '        "alternatives": ["雨天/拥挤/体力不足时可替换的方案"],',
     '        "riskNotes": ["开放时间、排队、天气、驾驶或交通风险提醒"]',
     '      }',
@@ -1225,10 +2036,30 @@ function getStructuredOutputInstructions(recordType: string) {
     '        "addressHint": "辅助地址或区域",',
     '        "longitude": null,',
     '        "latitude": null,',
-    '        "geocodeStatus": "pending"',
+    '        "geocodeStatus": "pending",',
+    '        "source": "llm_advice",',
+    '        "verified": false,',
+    '        "formattedAddress": null',
     '      }',
     '    ],',
+    '    "verifiedMapPoints": [],',
     '    "notes": ["出行前需要核对开放时间、天气和交通"],',
+    '    "supplements": [',
+    '      {',
+    '        "source": "llm_advice",',
+    '        "verified": false,',
+    '        "title": "补充攻略标题",',
+    '        "items": ["装备、预约、亲子、餐饮或自驾安全建议；不要写无来源价格/车次/酒店名"]',
+    '      }',
+    '    ],',
+    '    "dataQualityNotes": [',
+    '      {',
+    '        "source": "llm_advice",',
+    '        "verified": false,',
+    '        "label": "数据限制",',
+    '        "detail": "说明未接入供应商数据，相关事实需出行前核对"',
+    '      }',
+    '    ],',
     '    "returnTrip": {',
     '      "fromCity": "最后游玩城市",',
     '      "toCity": "出发城市，也就是默认家所在城市",',
@@ -1243,7 +2074,7 @@ function getStructuredOutputInstructions(recordType: string) {
     '  }',
     '}',
     '每个上午/下午/晚上安排都必须写 reason，并且 transition 必须包含通行方式、切换时长和距离。',
-    '每天必须提供 alternatives 和 riskNotes。',
+    '每天必须提供 strategy、timelineItems、transportCards、placeCards、lodgingAreaAdvice、alternatives 和 riskNotes。',
     '无论单城市还是多城市自驾，returnTrip 都必须安排在旅行最后一天晚上回到出发城市。',
     'mapPoints 只放真实可搜索的地点，不要放“上午”“市中心一带”这类泛称。',
     '距离和耗时可以给近似参考，但不要宣称实时导航、实时路况或精确价格。',
@@ -1307,6 +2138,30 @@ function buildMapPointSearchText(point: StructuredItineraryMapPoint) {
     .join(' ')
 }
 
+function isVerifiedAmapPoint(point: StructuredItineraryMapPoint) {
+  return (
+    point.source === 'amap' &&
+    point.verified &&
+    point.longitude !== null &&
+    point.latitude !== null &&
+    point.geocodeStatus === 'success'
+  )
+}
+
+function markUnverifiedMapPoint(
+  point: StructuredItineraryMapPoint,
+  geocodeStatus: StructuredItineraryMapPoint['geocodeStatus'],
+) {
+  return {
+    ...point,
+    longitude: null,
+    latitude: null,
+    geocodeStatus,
+    verified: false,
+    formattedAddress: null,
+  } satisfies StructuredItineraryMapPoint
+}
+
 async function geocodeMapPoint(
   point: StructuredItineraryMapPoint,
   apiKey: string,
@@ -1314,10 +2169,7 @@ async function geocodeMapPoint(
   const searchText = buildMapPointSearchText(point)
 
   if (!searchText) {
-    return {
-      ...point,
-      geocodeStatus: 'skipped' as const,
-    }
+    return markUnverifiedMapPoint(point, 'skipped')
   }
 
   const url = new URL('https://restapi.amap.com/v3/geocode/geo')
@@ -1332,14 +2184,12 @@ async function geocodeMapPoint(
   try {
     const response = await fetch(url)
     const body = (await response.json()) as AmapGeocodeResponse
-    const location = body.geocodes?.[0]?.location
+    const geocode = body.geocodes?.[0]
+    const location = geocode?.location
     const coordinate = location ? parseAmapCoordinate(location) : null
 
     if (!response.ok || body.status !== '1' || !coordinate) {
-      return {
-        ...point,
-        geocodeStatus: 'failed' as const,
-      }
+      return markUnverifiedMapPoint(point, 'failed')
     }
 
     return {
@@ -1347,12 +2197,12 @@ async function geocodeMapPoint(
       longitude: coordinate.longitude,
       latitude: coordinate.latitude,
       geocodeStatus: 'success' as const,
+      source: 'amap' as const,
+      verified: true,
+      formattedAddress: geocode?.formatted_address ?? point.formattedAddress,
     }
   } catch {
-    return {
-      ...point,
-      geocodeStatus: 'failed' as const,
-    }
+    return markUnverifiedMapPoint(point, 'failed')
   }
 }
 
@@ -1368,36 +2218,37 @@ async function enrichStructuredItineraryMapPoints(
   const apiKey = getAmapWebServiceKeyOrNull()
 
   if (!apiKey) {
+    const mapPoints = itinerary.mapPoints.map((point) =>
+      isVerifiedAmapPoint(point)
+        ? point
+        : markUnverifiedMapPoint(point, 'skipped'),
+    )
+
     return {
       ...itinerary,
-      mapPoints: itinerary.mapPoints.map((point) => ({
-        ...point,
-        geocodeStatus:
-          point.longitude !== null && point.latitude !== null
-            ? ('success' as const)
-            : ('skipped' as const),
-      })),
+      mapPoints,
+      verifiedMapPoints: mapPoints.filter((point) => point.verified),
     }
   }
 
   const mapPoints: StructuredItineraryMapPoint[] = []
 
   for (const point of itinerary.mapPoints) {
-    if (point.longitude !== null && point.latitude !== null) {
-      mapPoints.push({
-        ...point,
-        geocodeStatus: 'success',
-      })
+    if (isVerifiedAmapPoint(point)) {
+      mapPoints.push(point)
       continue
     }
 
     await sleep(250)
-    mapPoints.push(await geocodeMapPoint(point, apiKey))
+    mapPoints.push(
+      await geocodeMapPoint(markUnverifiedMapPoint(point, 'pending'), apiKey),
+    )
   }
 
   return {
     ...itinerary,
     mapPoints,
+    verifiedMapPoints: mapPoints.filter((point) => point.verified),
   }
 }
 
@@ -1511,6 +2362,84 @@ function renderReturnTrip(returnTrip: StructuredItineraryReturnTrip | null) {
     .join('\n')
 }
 
+function buildStructuredDayFromItems({
+  day,
+  title,
+  city,
+  items,
+  strategy,
+  alternatives,
+  riskNotes,
+}: {
+  day: number
+  title: string
+  city: string | null
+  items: StructuredItineraryItem[]
+  strategy: string
+  alternatives: string[]
+  riskNotes: string[]
+}) {
+  const baseDay: StructuredItineraryDay = {
+    day,
+    title,
+    city,
+    items,
+    strategy,
+    timelineItems: [],
+    transportCards: [],
+    placeCards: [],
+    lodgingAreaAdvice: [],
+    alternatives,
+    riskNotes,
+  }
+
+  return completeStructuredDay({
+    day: baseDay,
+    fallbackDay: null,
+    index: day - 1,
+  })
+}
+
+function buildStructuredItineraryFromDays({
+  recordType,
+  title,
+  summary,
+  days,
+  notes,
+  returnTrip,
+}: {
+  recordType: string
+  title: string
+  summary: string
+  days: StructuredItineraryDay[]
+  notes: string[]
+  returnTrip: StructuredItineraryReturnTrip
+}) {
+  const overviewFallback = buildDefaultOverview(title, summary)
+  const highlights = days
+    .flatMap((day) => day.placeCards.map((place) => place.name))
+    .slice(0, 5)
+  const baseItinerary: StructuredItinerary = {
+    version: 3,
+    title,
+    summary,
+    recordType,
+    overview: {
+      ...overviewFallback,
+      highlights: highlights.length ? highlights : overviewFallback.highlights,
+    },
+    days,
+    mapPoints: buildMapPointsFromDays(days),
+    verifiedMapPoints: [],
+    notes,
+    supplements: [],
+    dataQualityNotes: buildDefaultDataQualityNotes(),
+    returnTrip,
+  }
+
+  return completeStructuredItineraryWithFallback(baseItinerary, baseItinerary)
+}
+
 function buildCityStructuredItinerary(
   recordType: string,
   title: string,
@@ -1569,49 +2498,54 @@ function buildCityStructuredItinerary(
   const days = Array.from({ length: travelDays }, (_item, index) => {
     const dayNumber = index + 1
     let previousPlaceName = dayNumber === 1 ? departureCity : `${targetCity}住宿地`
+    const items = itemTemplates.map((template) => {
+      const isLastEvening =
+        dayNumber === travelDays && template.timeOfDay === '晚上'
+      const placeName = isLastEvening
+        ? `${targetCity}交通枢纽`
+        : `${targetCity}${template.suffix}`
+      const titleText = isLastEvening ? '晚间返程前整理与出发' : template.title
+      const description = isLastEvening
+        ? `压缩晚间游玩强度，预留行李、用餐和前往交通枢纽的时间，随后从${targetCity}返回${departureCity}。`
+        : template.description
+      const reason = isLastEvening
+        ? '最后一天晚上默认到家，所以晚间不再安排高强度游玩，优先保证返程稳定。'
+        : template.reason
+      const transition = buildTransition({
+        fromPlaceName: previousPlaceName,
+        toPlaceName: placeName,
+        transportMode: template.transportMode,
+        durationText: template.transitionDuration,
+        distanceText: template.transitionDistance,
+        note: '为规划参考，实际耗时请按住宿位置、路况和公共交通班次核对。',
+      })
 
-    return {
+      previousPlaceName = placeName
+
+      return {
+        timeOfDay: template.timeOfDay,
+        timeWindow: template.timeWindow,
+        durationText: template.durationText,
+        title: titleText,
+        description,
+        reason,
+        placeName,
+        city: targetCity,
+        addressHint: targetCity,
+        transport: template.transportMode,
+        transition,
+      } satisfies StructuredItineraryItem
+    })
+
+    return buildStructuredDayFromItems({
       day: dayNumber,
       title: `Day ${dayNumber}：${dayTitles[index % dayTitles.length]}`,
       city: targetCity,
-      items: itemTemplates.map((template) => {
-        const isLastEvening =
-          dayNumber === travelDays && template.timeOfDay === '晚上'
-        const placeName = isLastEvening
-          ? `${targetCity}交通枢纽`
-          : `${targetCity}${template.suffix}`
-        const titleText = isLastEvening ? '晚间返程前整理与出发' : template.title
-        const description = isLastEvening
-          ? `压缩晚间游玩强度，预留行李、用餐和前往交通枢纽的时间，随后从${targetCity}返回${departureCity}。`
-          : template.description
-        const reason = isLastEvening
-          ? '最后一天晚上默认到家，所以晚间不再安排高强度游玩，优先保证返程稳定。'
-          : template.reason
-        const transition = buildTransition({
-          fromPlaceName: previousPlaceName,
-          toPlaceName: placeName,
-          transportMode: template.transportMode,
-          durationText: template.transitionDuration,
-          distanceText: template.transitionDistance,
-          note: '为规划参考，实际耗时请按住宿位置、路况和公共交通班次核对。',
-        })
-
-        previousPlaceName = placeName
-
-        return {
-          timeOfDay: template.timeOfDay,
-          timeWindow: template.timeWindow,
-          durationText: template.durationText,
-          title: titleText,
-          description,
-          reason,
-          placeName,
-          city: targetCity,
-          addressHint: targetCity,
-          transport: template.transportMode,
-          transition,
-        } satisfies StructuredItineraryItem
-      }),
+      items,
+      strategy:
+        dayNumber === travelDays
+          ? '最后一天压缩游玩密度，把晚间完整留给返程和到家后的恢复。'
+          : '上午安排稳定核心点，下午保留户外或街区弹性，晚上回到便于住宿和交通的区域。',
       alternatives: [
         `雨天可把户外安排替换为${targetCity}博物馆、商圈或室内展馆。`,
         '如果排队过长，优先保留当天核心点，压缩晚间街区停留。',
@@ -1624,16 +2558,14 @@ function buildCityStructuredItinerary(
           ? '最后一天必须预留回程时间，避免晚间交通衔接过紧。'
           : '晚间返回住宿前核对末班车和打车等待时间。',
       ],
-    } satisfies StructuredItineraryDay
+    })
   })
 
-  return {
-    version: 2,
+  return buildStructuredItineraryFromDays({
     title,
     summary,
     recordType,
     days,
-    mapPoints: buildMapPointsFromDays(days),
     notes,
     returnTrip: buildReturnTrip({
       fromCity: targetCity,
@@ -1641,7 +2573,7 @@ function buildCityStructuredItinerary(
       travelDays,
       transportMode,
     }),
-  }
+  })
 }
 
 function buildDriveStructuredItinerary(
@@ -1673,93 +2605,97 @@ function buildDriveStructuredItinerary(
     const eveningPlace = isLastDay
       ? `${destinationCity}返程出发点`
       : `${nextCity}住宿区`
+    const items: StructuredItineraryItem[] = [
+      {
+        timeOfDay: '上午',
+        timeWindow: '08:30-11:30',
+        durationText: isLastDay ? '约 2 小时' : '约 2-3 小时驾驶与休息',
+        title: `${currentCity}出发与补给`,
+        description: isLastDay
+          ? '最后一天上午只安排城市内轻量活动和车辆整理，为下午收尾和晚间回程留出空间。'
+          : `从${currentCity}出发前确认车辆、停车、补给和当天休息点，避免连续驾驶过久。`,
+        reason: isLastDay
+          ? '最后一天晚上需要到家，上午保持低强度可以降低回程疲劳。'
+          : '上午路况和精力通常更稳定，适合完成跨城主驾驶段。',
+        placeName: morningPlace,
+        city: currentCity,
+        addressHint: currentCity,
+        transport: driveMode,
+        transition: buildTransition({
+          fromPlaceName: dayNumber === 1 ? homeCity : `${currentCity}住宿区`,
+          toPlaceName: morningPlace,
+          transportMode: driveMode,
+          durationText: '约 10-30 分钟',
+          distanceText: '约 2-10 公里',
+          note: '出发前核对车辆状态、停车费和补给条件。',
+        }),
+      },
+      {
+        timeOfDay: '下午',
+        timeWindow: '14:00-17:00',
+        durationText: '约 2-3 小时',
+        title:
+          isLastDay
+            ? `${destinationCity}轻量游览`
+            : `${nextCity}抵达后低强度游览`,
+        description: isLastDay
+          ? '选择停车和离城都较方便的代表性区域，控制游玩时长。'
+          : '抵达后优先停车或办理入住，再安排低强度游览，避免跨城后继续赶景点。',
+        reason: isLastDay
+          ? '下午保留城市印象点，同时不压缩晚间返程时间。'
+          : '下午抵达后安排低强度点位，更符合自驾后的体力状态。',
+        placeName: afternoonPlace,
+        city: isLastDay ? destinationCity : nextCity,
+        addressHint: isLastDay ? destinationCity : nextCity,
+        transport: driveMode,
+        transition: buildTransition({
+          fromPlaceName: morningPlace,
+          toPlaceName: afternoonPlace,
+          transportMode: driveMode,
+          durationText: isLastDay ? '约 20-40 分钟' : '约 1.5-3 小时',
+          distanceText: isLastDay ? '约 5-15 公里' : '约 80-220 公里',
+          note: '跨城距离为规划参考，出发前请按高德等导航重新核对。',
+        }),
+      },
+      {
+        timeOfDay: '晚上',
+        timeWindow: '18:30-22:30',
+        durationText: isLastDay ? '按回程路线核对' : '约 1.5-2 小时',
+        title: isLastDay ? '晚间回程到家' : `${nextCity}入住与休整`,
+        description: isLastDay
+          ? `从${destinationCity}晚间出发返回${homeCity}，默认${homeCity}为家所在城市。`
+          : '晚间以入住、餐饮和复盘路况为主，不继续增加长距离移动。',
+        reason: isLastDay
+          ? '最后一天晚上必须到家，因此晚间段专门留给返程，不再叠加游玩任务。'
+          : '自驾路线更需要稳定休息，晚间降低强度能保证第二天驾驶状态。',
+        placeName: eveningPlace,
+        city: isLastDay ? destinationCity : nextCity,
+        addressHint: isLastDay ? destinationCity : nextCity,
+        transport: driveMode,
+        transition: buildTransition({
+          fromPlaceName: afternoonPlace,
+          toPlaceName: isLastDay ? homeCity : eveningPlace,
+          transportMode: driveMode,
+          durationText: isLastDay ? '约 2-5 小时以上' : '约 15-30 分钟',
+          distanceText: isLastDay ? '按实际返程路线核对' : '约 3-10 公里',
+          note: isLastDay
+            ? '回程需以实时路况为准，必要时提前出发或增加休息。'
+            : '优先选择停车方便、第二天出城顺路的住宿区域。',
+        }),
+      },
+    ]
 
-    return {
+    return buildStructuredDayFromItems({
       day: dayNumber,
       title:
         isLastDay
           ? `Day ${dayNumber}：${destinationCity}收尾与晚间回程`
           : `Day ${dayNumber}：${currentCity}到${nextCity}`,
       city: currentCity,
-      items: [
-        {
-          timeOfDay: '上午',
-          timeWindow: '08:30-11:30',
-          durationText: isLastDay ? '约 2 小时' : '约 2-3 小时驾驶与休息',
-          title: `${currentCity}出发与补给`,
-          description: isLastDay
-            ? '最后一天上午只安排城市内轻量活动和车辆整理，为下午收尾和晚间回程留出空间。'
-            : `从${currentCity}出发前确认车辆、停车、补给和当天休息点，避免连续驾驶过久。`,
-          reason: isLastDay
-            ? '最后一天晚上需要到家，上午保持低强度可以降低回程疲劳。'
-            : '上午路况和精力通常更稳定，适合完成跨城主驾驶段。',
-          placeName: morningPlace,
-          city: currentCity,
-          addressHint: currentCity,
-          transport: driveMode,
-          transition: buildTransition({
-            fromPlaceName: dayNumber === 1 ? homeCity : `${currentCity}住宿区`,
-            toPlaceName: morningPlace,
-            transportMode: driveMode,
-            durationText: '约 10-30 分钟',
-            distanceText: '约 2-10 公里',
-            note: '出发前核对车辆状态、停车费和补给条件。',
-          }),
-        },
-        {
-          timeOfDay: '下午',
-          timeWindow: '14:00-17:00',
-          durationText: '约 2-3 小时',
-          title:
-            isLastDay
-              ? `${destinationCity}轻量游览`
-              : `${nextCity}抵达后低强度游览`,
-          description: isLastDay
-            ? '选择停车和离城都较方便的代表性区域，控制游玩时长。'
-            : '抵达后优先停车或办理入住，再安排低强度游览，避免跨城后继续赶景点。',
-          reason: isLastDay
-            ? '下午保留城市印象点，同时不压缩晚间返程时间。'
-            : '下午抵达后安排低强度点位，更符合自驾后的体力状态。',
-          placeName: afternoonPlace,
-          city: isLastDay ? destinationCity : nextCity,
-          addressHint: isLastDay ? destinationCity : nextCity,
-          transport: driveMode,
-          transition: buildTransition({
-            fromPlaceName: morningPlace,
-            toPlaceName: afternoonPlace,
-            transportMode: driveMode,
-            durationText: isLastDay ? '约 20-40 分钟' : '约 1.5-3 小时',
-            distanceText: isLastDay ? '约 5-15 公里' : '约 80-220 公里',
-            note: '跨城距离为规划参考，出发前请按高德等导航重新核对。',
-          }),
-        },
-        {
-          timeOfDay: '晚上',
-          timeWindow: '18:30-22:30',
-          durationText: isLastDay ? '按回程路线核对' : '约 1.5-2 小时',
-          title: isLastDay ? '晚间回程到家' : `${nextCity}入住与休整`,
-          description: isLastDay
-            ? `从${destinationCity}晚间出发返回${homeCity}，默认${homeCity}为家所在城市。`
-            : '晚间以入住、餐饮和复盘路况为主，不继续增加长距离移动。',
-          reason: isLastDay
-            ? '最后一天晚上必须到家，因此晚间段专门留给返程，不再叠加游玩任务。'
-            : '自驾路线更需要稳定休息，晚间降低强度能保证第二天驾驶状态。',
-          placeName: eveningPlace,
-          city: isLastDay ? destinationCity : nextCity,
-          addressHint: isLastDay ? destinationCity : nextCity,
-          transport: driveMode,
-          transition: buildTransition({
-            fromPlaceName: afternoonPlace,
-            toPlaceName: isLastDay ? homeCity : eveningPlace,
-            transportMode: driveMode,
-            durationText: isLastDay ? '约 2-5 小时以上' : '约 15-30 分钟',
-            distanceText: isLastDay ? '按实际返程路线核对' : '约 3-10 公里',
-            note: isLastDay
-              ? '回程需以实时路况为准，必要时提前出发或增加休息。'
-              : '优先选择停车方便、第二天出城顺路的住宿区域。',
-          }),
-        },
-      ],
+      items,
+      strategy: isLastDay
+        ? '最后一天只保留轻量收尾，把晚间完整让给回程，避免疲劳驾驶。'
+        : '上午完成主驾驶段，下午抵达后低强度游览，晚上以入住、补给和休整为主。',
       alternatives: [
         '遇到降雨或拥堵时，减少下午景点停留，优先保证跨城和入住。',
         '体力不足时取消晚间街区活动，只保留餐饮、补给和休息。',
@@ -1772,16 +2708,14 @@ function buildDriveStructuredItinerary(
           ? '最后一天晚间必须预留返程，不建议追加远郊景点。'
           : '雨天、山路或夜间路段需降低速度并增加机动时间。',
       ],
-    } satisfies StructuredItineraryDay
+    })
   })
 
-  return {
-    version: 2,
+  return buildStructuredItineraryFromDays({
     title,
     summary,
     recordType,
     days,
-    mapPoints: buildMapPointsFromDays(days),
     notes,
     returnTrip: buildReturnTrip({
       fromCity: destinationCity,
@@ -1790,7 +2724,7 @@ function buildDriveStructuredItinerary(
       transportMode: driveMode,
       drivePlan: true,
     }),
-  }
+  })
 }
 
 function parseStructuredItineraryJson(value: string | null | undefined) {
@@ -1800,13 +2734,17 @@ function parseStructuredItineraryJson(value: string | null | undefined) {
 
   try {
     return normalizeStructuredItinerary(JSON.parse(value), {
-      version: 1,
+      version: 3,
       title: '',
       summary: '',
       recordType: 'legacy',
+      overview: buildDefaultOverview('', ''),
       days: [],
       mapPoints: [],
+      verifiedMapPoints: [],
       notes: [],
+      supplements: [],
+      dataQualityNotes: buildDefaultDataQualityNotes(),
       returnTrip: null,
     })
   } catch {
@@ -2489,21 +3427,30 @@ function buildMockOptimizedPlan(
   const originalStructured = parseStructuredItineraryJson(
     originalRecord.structuredContent,
   )
+  const optimizedFallback = buildMinimalStructuredItinerary(
+    'optimized-plan',
+    title,
+    summary,
+    [
+      `本次优化重点：${input.optimizeRequirement}`,
+      '优化结果会作为新的历史记录保存，原始方案不会被覆盖。',
+    ],
+  )
   const structuredContent = originalStructured
-    ? {
-        ...originalStructured,
-        title,
-        summary,
-        recordType: 'optimized-plan',
-        notes: [
-          `本次优化重点：${input.optimizeRequirement}`,
-          ...originalStructured.notes,
-        ],
-      }
-    : buildMinimalStructuredItinerary('optimized-plan', title, summary, [
-        `本次优化重点：${input.optimizeRequirement}`,
-        '优化结果会作为新的历史记录保存，原始方案不会被覆盖。',
-      ])
+    ? completeStructuredItineraryWithFallback(
+        {
+          ...originalStructured,
+          title,
+          summary,
+          recordType: 'optimized-plan',
+          notes: [
+            `本次优化重点：${input.optimizeRequirement}`,
+            ...originalStructured.notes,
+          ],
+        },
+        optimizedFallback,
+      )
+    : optimizedFallback
 
   return {
     plan: {

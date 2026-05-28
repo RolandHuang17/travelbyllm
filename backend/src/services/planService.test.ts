@@ -38,15 +38,23 @@ function buildCompleteLlmOutput(recordType = 'single-city-plan') {
   return JSON.stringify({
     markdown: '# 模型增强方案\n\n模型生成的完整行程。',
     structuredItinerary: {
-      version: 2,
+      version: 3,
       title: '模型增强方案',
       summary: '模型补齐了理由、交通切换、备选风险和回程。',
       recordType,
+      overview: {
+        routeSummary: '深圳出发，广州游玩，最后一晚回深圳。',
+        pace: '轻松均衡',
+        bestFor: ['周末短途'],
+        highlights: ['越秀公园'],
+        dataBasis: ['用户输入', '地图坐标由本地补齐'],
+      },
       days: [
         {
           day: 1,
           title: 'Day 1：模型安排',
           city: '广东省广州市',
+          strategy: '上午先完成低强度户外点，下午保留弹性。',
           items: [
             {
               timeOfDay: '上午',
@@ -69,6 +77,64 @@ function buildCompleteLlmOutput(recordType = 'single-city-plan') {
               },
             },
           ],
+          timelineItems: [
+            {
+              source: 'llm_advice',
+              verified: false,
+              timeOfDay: '上午',
+              timeWindow: '09:00-11:30',
+              durationText: '约 2 小时',
+              title: '越秀公园游览',
+              description: '用低强度户外点作为开场。',
+              reason: '上午体力好且户外舒适，适合安排城市公园。',
+              placeName: '越秀公园',
+              city: '广东省广州市',
+              addressHint: '广州市越秀区',
+              transport: '地铁',
+              transition: {
+                fromPlaceName: '广东省深圳市',
+                toPlaceName: '越秀公园',
+                transportMode: '高铁+地铁',
+                durationText: '约 2 小时',
+                distanceText: '约 140 公里',
+                note: '耗时和距离为规划参考。',
+              },
+            },
+          ],
+          transportCards: [
+            {
+              source: 'llm_advice',
+              verified: false,
+              title: '深圳到越秀公园',
+              mode: '高铁+地铁',
+              route: '广东省深圳市 -> 越秀公园',
+              departureText: '广东省深圳市',
+              arrivalText: '越秀公园',
+              durationText: '约 2 小时',
+              distanceText: '约 140 公里',
+              reason: '跨城后直接接城市公园，节奏较稳。',
+            },
+          ],
+          placeCards: [
+            {
+              source: 'llm_advice',
+              verified: false,
+              name: '越秀公园',
+              city: '广东省广州市',
+              addressHint: '广州市越秀区',
+              description: '城市公园适合低强度开场。',
+              durationText: '约 2 小时',
+              visitTips: ['出行前核对天气和开放规则。'],
+            },
+          ],
+          lodgingAreaAdvice: [
+            {
+              source: 'llm_advice',
+              verified: false,
+              area: '越秀或公园前周边',
+              reason: '交通衔接便利，便于晚间返回。',
+            },
+          ],
           alternatives: ['雨天改为广东省博物馆。'],
           riskNotes: ['出发前核对开放时间和天气。'],
         },
@@ -83,9 +149,29 @@ function buildCompleteLlmOutput(recordType = 'single-city-plan') {
           longitude: null,
           latitude: null,
           geocodeStatus: 'pending',
+          source: 'llm_advice',
+          verified: false,
+          formattedAddress: null,
         },
       ],
+      verifiedMapPoints: [],
       notes: ['距离和耗时为规划参考。'],
+      supplements: [
+        {
+          source: 'llm_advice',
+          verified: false,
+          title: '核对清单',
+          items: ['出行前核对天气和交通。'],
+        },
+      ],
+      dataQualityNotes: [
+        {
+          source: 'llm_advice',
+          verified: false,
+          label: '供应商数据',
+          detail: '未接入票务、酒店和门票供应商。',
+        },
+      ],
       returnTrip: {
         fromCity: '广东省广州市',
         toCity: '广东省深圳市',
@@ -133,6 +219,135 @@ function buildIncompleteLlmOutput() {
   })
 }
 
+function buildSupplierPollutedLlmOutput() {
+  return JSON.stringify({
+    markdown:
+      '# 含供应商字段方案\n\n建议乘坐 G123，票价￥88，入住广州花园酒店，评分4.8分，当前营业中。',
+    structuredItinerary: {
+      version: 3,
+      title: '含供应商字段方案',
+      summary: '模型错误写入了无来源供应商事实。',
+      recordType: 'single-city-plan',
+      overview: {
+        routeSummary: '深圳到广州，最后一晚回深圳。',
+        pace: '轻松',
+        bestFor: ['短途'],
+        highlights: ['广州花园酒店', 'G123'],
+        dataBasis: ['票价￥88', '评分4.8分'],
+      },
+      days: [
+        {
+          day: 1,
+          title: 'Day 1：G123 到广州花园酒店',
+          city: '广东省广州市',
+          strategy: '乘坐 G123，票价￥88，入住广州花园酒店。',
+          items: [
+            {
+              timeOfDay: '上午',
+              title: '乘坐 G123 后入住广州花园酒店',
+              description: '票价￥88，酒店评分4.8分，当前营业中。',
+              reason: 'G123 最方便。',
+              placeName: '广州花园酒店',
+              city: '广东省广州市',
+              addressHint: '广州市越秀区',
+              transport: 'G123',
+              transition: {
+                fromPlaceName: '广东省深圳市',
+                toPlaceName: '广州花园酒店',
+                transportMode: 'G123',
+                durationText: '约 1 小时',
+                distanceText: '约 140 公里',
+                note: '票价￥88。',
+              },
+            },
+          ],
+          timelineItems: [],
+          transportCards: [
+            {
+              source: 'llm_advice',
+              verified: false,
+              title: '乘坐 G123',
+              mode: 'G123',
+              route: '深圳 -> 广州 G123',
+              departureText: '深圳北',
+              arrivalText: '广州南',
+              durationText: '约 1 小时',
+              distanceText: '约 140 公里',
+              reason: '票价￥88。',
+            },
+          ],
+          placeCards: [
+            {
+              source: 'llm_advice',
+              verified: false,
+              name: '广州花园酒店',
+              city: '广东省广州市',
+              addressHint: '广州市越秀区',
+              description: '评分4.8分，当前营业中。',
+              durationText: '约 2 小时',
+              visitTips: ['门票88元。'],
+            },
+          ],
+          lodgingAreaAdvice: [
+            {
+              source: 'llm_advice',
+              verified: false,
+              area: '广州花园酒店',
+              reason: '价格600元/晚，评分4.8分。',
+            },
+          ],
+          alternatives: ['可改住广州花园酒店。'],
+          riskNotes: ['广州花园酒店当前营业中。'],
+        },
+      ],
+      mapPoints: [
+        {
+          day: 1,
+          order: 1,
+          name: '广州花园酒店',
+          city: '广东省广州市',
+          addressHint: '广州市越秀区',
+          longitude: null,
+          latitude: null,
+          geocodeStatus: 'pending',
+          source: 'llm_advice',
+          verified: false,
+          formattedAddress: null,
+        },
+      ],
+      verifiedMapPoints: [],
+      notes: ['G123 票价￥88。'],
+      supplements: [
+        {
+          source: 'llm_advice',
+          verified: false,
+          title: '供应商事实',
+          items: ['广州花园酒店评分4.8分，门票88元。'],
+        },
+      ],
+      dataQualityNotes: [
+        {
+          source: 'llm_advice',
+          verified: false,
+          label: '供应商事实',
+          detail: 'G123 与票价￥88 未核验。',
+        },
+      ],
+      returnTrip: {
+        fromCity: '广东省广州市',
+        toCity: '广东省深圳市',
+        departureTime: 'Day 1 晚上',
+        arrivalTime: '最后一天晚上到家',
+        transportMode: 'G123',
+        durationText: '约 1 小时',
+        distanceText: '约 140 公里',
+        description: '乘坐 G123 返回。',
+        note: '票价￥88。',
+      },
+    },
+  })
+}
+
 const baseRecord = {
   id: 40,
   userId: 12,
@@ -159,6 +374,7 @@ const baseRecord = {
 describe('optimizePlan title versioning', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.unstubAllGlobals()
     delete process.env.AMAP_WEB_SERVICE_KEY
     vi.mocked(isLlmConfigured).mockReturnValue(false)
     vi.mocked(getPublicLlmInfo).mockReturnValue({
@@ -225,6 +441,7 @@ describe('optimizePlan title versioning', () => {
 describe('enhanced itinerary planning', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.unstubAllGlobals()
     delete process.env.AMAP_WEB_SERVICE_KEY
     vi.mocked(isLlmConfigured).mockReturnValue(false)
     vi.mocked(getPublicLlmInfo).mockReturnValue({
@@ -250,7 +467,7 @@ describe('enhanced itinerary planning', () => {
     }))
   })
 
-  it('adds v2 details and a final-night return trip to city plans', async () => {
+  it('adds v3 rich-guide details and a final-night return trip to city plans', async () => {
     const result = await generateCityPlan(12, {
       targetCity: '广东省广州市',
       departureCity: '广东省深圳市',
@@ -261,7 +478,7 @@ describe('enhanced itinerary planning', () => {
       weatherMode: null,
     })
 
-    expect(result.plan.structuredContent.version).toBe(2)
+    expect(result.plan.structuredContent.version).toBe(3)
     expect(result.plan.structuredContent.returnTrip?.fromCity).toBe(
       '广东省广州市',
     )
@@ -273,8 +490,22 @@ describe('enhanced itinerary planning', () => {
     )
     expect(result.plan.content).toContain('最后一晚回程安排')
     expect(result.plan.structuredContent.days).toHaveLength(3)
+    expect(result.plan.structuredContent.overview.routeSummary).toBeTruthy()
+    expect(result.plan.structuredContent.supplements.length).toBeGreaterThan(0)
+    expect(result.plan.structuredContent.dataQualityNotes.length).toBeGreaterThan(0)
+    expect(result.plan.structuredContent.verifiedMapPoints).toHaveLength(0)
+    expect(
+      result.plan.structuredContent.mapPoints.every(
+        (point) => !point.verified && point.geocodeStatus === 'skipped',
+      ),
+    ).toBe(true)
     expect(result.plan.structuredContent.days[0].alternatives.length).toBeGreaterThan(0)
     expect(result.plan.structuredContent.days[0].riskNotes.length).toBeGreaterThan(0)
+    expect(result.plan.structuredContent.days[0].strategy).toBeTruthy()
+    expect(result.plan.structuredContent.days[0].timelineItems.length).toBeGreaterThan(0)
+    expect(result.plan.structuredContent.days[0].transportCards.length).toBeGreaterThan(0)
+    expect(result.plan.structuredContent.days[0].placeCards.length).toBeGreaterThan(0)
+    expect(result.plan.structuredContent.days[0].lodgingAreaAdvice.length).toBeGreaterThan(0)
     expect(result.plan.structuredContent.days[0].items[0].reason).toBeTruthy()
     expect(
       result.plan.structuredContent.days[0].items[0].transition?.durationText,
@@ -296,7 +527,7 @@ describe('enhanced itinerary planning', () => {
       weatherMode: null,
     })
 
-    expect(result.plan.structuredContent.version).toBe(2)
+    expect(result.plan.structuredContent.version).toBe(3)
     expect(result.plan.summary).toContain('广东省广州市')
     expect(result.plan.summary).toContain('最后一晚回到广东省广州市')
     expect(result.plan.structuredContent.returnTrip?.fromCity).toBe(
@@ -308,9 +539,77 @@ describe('enhanced itinerary planning', () => {
     expect(result.plan.structuredContent.returnTrip?.arrivalTime).toContain(
       '晚上到家',
     )
+    expect(result.plan.structuredContent.days[0].strategy).toContain('驾驶')
+    expect(result.plan.structuredContent.days[0].transportCards.length).toBeGreaterThan(0)
     expect(result.plan.content).toContain(
       '广东省广州市 -> 广东省汕头市 -> 广东省潮州市 -> 福建省厦门市 -> 广东省广州市',
     )
+  })
+
+  it('keeps legacy v2 geocoded map points as verified amap points during optimization', async () => {
+    vi.mocked(prisma.travelRecord.findFirst).mockResolvedValue({
+      ...baseRecord,
+      recordType: 'single-city-plan',
+      resultTitle: '襄阳 3 天智能旅行方案',
+      resultContent: '# 襄阳 3 天智能旅行方案\n\n原方案内容',
+      structuredContent: JSON.stringify({
+        version: 2,
+        title: '襄阳 3 天智能旅行方案',
+        summary: '旧结构里已有高德坐标。',
+        recordType: 'single-city-plan',
+        days: [],
+        mapPoints: [
+          {
+            day: 1,
+            order: 1,
+            name: '襄阳博物馆新馆',
+            city: '襄阳市',
+            addressHint: '襄城区凤雏大道与庞公路交汇处',
+            longitude: 112.171912,
+            latitude: 32.025295,
+            geocodeStatus: 'success',
+          },
+          {
+            day: 1,
+            order: 2,
+            name: '不可绘制地点',
+            city: '襄阳市',
+            addressHint: '地址待核对',
+            longitude: null,
+            latitude: null,
+            geocodeStatus: 'failed',
+          },
+        ],
+        notes: [],
+      }),
+    })
+
+    const result = await optimizePlan(12, {
+      recordId: 62,
+      optimizeRequirement: '保留原方案并优化节奏',
+    })
+
+    expect(result.plan.structuredContent.version).toBe(3)
+    expect(result.plan.structuredContent.verifiedMapPoints).toHaveLength(1)
+    expect(result.plan.structuredContent.verifiedMapPoints[0]).toMatchObject({
+      name: '襄阳博物馆新馆',
+      source: 'amap',
+      verified: true,
+      geocodeStatus: 'success',
+      longitude: 112.171912,
+      latitude: 32.025295,
+      formattedAddress: '襄城区凤雏大道与庞公路交汇处',
+    })
+    expect(
+      result.plan.structuredContent.mapPoints.find(
+        (point) => point.name === '不可绘制地点',
+      ),
+    ).toMatchObject({
+      verified: false,
+      geocodeStatus: 'skipped',
+      longitude: null,
+      latitude: null,
+    })
   })
 
   it('completes parseable LLM output locally without a second model call', async () => {
@@ -333,6 +632,7 @@ describe('enhanced itinerary planning', () => {
 
     expect(generateLlmText).toHaveBeenCalledTimes(1)
     expect(result.generationMode).toBe('llm')
+    expect(result.plan.structuredContent.version).toBe(3)
     expect(result.plan.title).toBe('模型缺字段方案')
     expect(result.plan.structuredContent.days).toHaveLength(3)
     expect(result.plan.structuredContent.days[0].items[0].reason).toBeTruthy()
@@ -340,6 +640,10 @@ describe('enhanced itinerary planning', () => {
       result.plan.structuredContent.days[0].items[0].transition?.distanceText,
     ).toBeTruthy()
     expect(result.plan.structuredContent.days[0].alternatives.length).toBeGreaterThan(0)
+    expect(result.plan.structuredContent.days[0].timelineItems.length).toBeGreaterThan(0)
+    expect(result.plan.structuredContent.days[0].transportCards.length).toBeGreaterThan(0)
+    expect(result.plan.structuredContent.days[0].placeCards.length).toBeGreaterThan(0)
+    expect(result.plan.structuredContent.days[0].lodgingAreaAdvice.length).toBeGreaterThan(0)
     expect(result.plan.structuredContent.returnTrip?.toCity).toBe(
       '广东省深圳市',
     )
@@ -365,12 +669,104 @@ describe('enhanced itinerary planning', () => {
 
     expect(generateLlmText).toHaveBeenCalledTimes(1)
     expect(result.generationMode).toBe('llm')
+    expect(result.plan.structuredContent.version).toBe(3)
+    expect(result.plan.structuredContent.overview.highlights).toContain(
+      '越秀公园',
+    )
     expect(result.plan.structuredContent.days[0].items[0].reason).toContain(
       '上午体力好',
+    )
+    expect(result.plan.structuredContent.days[0].strategy).toContain(
+      '上午先完成',
+    )
+    expect(result.plan.structuredContent.days[0].transportCards[0].route).toBe(
+      '广东省深圳市 -> 越秀公园',
     )
     expect(result.plan.structuredContent.returnTrip?.toCity).toBe(
       '广东省深圳市',
     )
+  })
+
+  it('filters unverified supplier facts from model structured output', async () => {
+    vi.mocked(isLlmConfigured).mockReturnValue(true)
+    vi.mocked(getPublicLlmInfo).mockReturnValue({
+      configured: true,
+      model: 'test-model',
+    })
+    vi.mocked(generateLlmText).mockResolvedValueOnce(
+      buildSupplierPollutedLlmOutput(),
+    )
+
+    const result = await generateCityPlan(12, {
+      targetCity: '广东省广州市',
+      departureCity: '广东省深圳市',
+      travelDays: 1,
+      startDate: null,
+      cardId: null,
+      temporaryPreference: null,
+      weatherMode: null,
+    })
+
+    const serializedStructured = JSON.stringify(result.plan.structuredContent)
+
+    expect(serializedStructured).not.toContain('G123')
+    expect(serializedStructured).not.toContain('￥')
+    expect(serializedStructured).not.toContain('88元')
+    expect(serializedStructured).not.toContain('600元')
+    expect(serializedStructured).not.toContain('4.8分')
+    expect(serializedStructured).not.toContain('营业中')
+    expect(serializedStructured).not.toContain('广州花园酒店')
+    expect(result.plan.content).not.toContain('G123')
+    expect(result.plan.content).not.toContain('￥')
+    expect(
+      result.plan.structuredContent.days[0].placeCards.some((place) =>
+        place.name.includes('酒店'),
+      ),
+    ).toBe(false)
+    expect(
+      result.plan.structuredContent.mapPoints.some((point) =>
+        point.name.includes('酒店'),
+      ),
+    ).toBe(false)
+    expect(result.plan.structuredContent.verifiedMapPoints).toHaveLength(0)
+  })
+
+  it('adds verified map points only after AMap geocode succeeds', async () => {
+    process.env.AMAP_WEB_SERVICE_KEY = 'test-amap-key'
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: '1',
+        geocodes: [
+          {
+            formatted_address: '广东省广州市越秀区越秀公园',
+            location: '113.264385,23.12911',
+          },
+        ],
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await generateCityPlan(12, {
+      targetCity: '广东省广州市',
+      departureCity: '广东省深圳市',
+      travelDays: 1,
+      startDate: null,
+      cardId: null,
+      temporaryPreference: null,
+      weatherMode: null,
+    })
+
+    expect(fetchMock).toHaveBeenCalled()
+    expect(result.plan.structuredContent.verifiedMapPoints.length).toBeGreaterThan(0)
+    expect(result.plan.structuredContent.verifiedMapPoints[0]).toMatchObject({
+      source: 'amap',
+      verified: true,
+      geocodeStatus: 'success',
+      formattedAddress: '广东省广州市越秀区越秀公园',
+      longitude: 113.264385,
+      latitude: 23.12911,
+    })
   })
 
   it('falls back to enhanced mock output when LLM output is not parseable JSON', async () => {
@@ -393,7 +789,7 @@ describe('enhanced itinerary planning', () => {
 
     expect(generateLlmText).toHaveBeenCalledTimes(1)
     expect(result.generationMode).toBe('mock-fallback')
-    expect(result.plan.structuredContent.version).toBe(2)
+    expect(result.plan.structuredContent.version).toBe(3)
     expect(result.plan.structuredContent.returnTrip?.toCity).toBe(
       '广东省深圳市',
     )

@@ -201,6 +201,20 @@ function readRecordProperty(value: unknown, propertyName: string) {
   return value[propertyName]
 }
 
+function formatCoordinateLabel(location: MapCoordinate) {
+  return `${location.longitude.toFixed(6)}, ${location.latitude.toFixed(6)}`
+}
+
+function isSameCoordinate(
+  firstLocation: MapCoordinate,
+  secondLocation: MapCoordinate,
+) {
+  return (
+    Math.abs(firstLocation.longitude - secondLocation.longitude) < 0.000001 &&
+    Math.abs(firstLocation.latitude - secondLocation.latitude) < 0.000001
+  )
+}
+
 function buildPlaceKey(place: Pick<MapPlace, 'amapPoiId' | 'location'>) {
   if (place.amapPoiId) {
     return `poi:${place.amapPoiId}`
@@ -211,6 +225,13 @@ function buildPlaceKey(place: Pick<MapPlace, 'amapPoiId' | 'location'>) {
 
 function buildFavoritePlaceKey(favoritePlace: FavoritePlace) {
   return favoritePlace.placeKey
+}
+
+function isSamePlace(firstPlace: MapPlace, secondPlace: MapPlace) {
+  return (
+    buildPlaceKey(firstPlace) === buildPlaceKey(secondPlace) ||
+    isSameCoordinate(firstPlace.location, secondPlace.location)
+  )
 }
 
 function favoriteToPlace(favoritePlace: FavoritePlace): MapPlace {
@@ -340,6 +361,20 @@ function parseSuggestions(result: unknown): PlaceSuggestion[] {
     .filter((suggestion): suggestion is PlaceSuggestion => Boolean(suggestion))
 }
 
+function createPickedCoordinatePlace(location: MapCoordinate): MapPlace {
+  const coordinateLabel = formatCoordinateLabel(location)
+
+  return {
+    amapPoiId: null,
+    name: '地图选点',
+    address: `坐标 ${coordinateLabel}`,
+    cityName: null,
+    district: null,
+    location,
+    source: 'picked',
+  }
+}
+
 function parseReverseGeocodeResult(
   result: unknown,
   location: MapCoordinate,
@@ -349,7 +384,8 @@ function parseReverseGeocodeResult(
   const pois = readArray(readRecordProperty(regeocode, 'pois'))
   const firstPoi = pois.find(isRecord)
   const formattedAddress =
-    readString(readRecordProperty(regeocode, 'formattedAddress')) || '地图选点'
+    readString(readRecordProperty(regeocode, 'formattedAddress')) ||
+    `坐标 ${formatCoordinateLabel(location)}`
   const cityName =
     readString(readRecordProperty(addressComponent, 'city')) ||
     readString(readRecordProperty(addressComponent, 'province')) ||
@@ -367,6 +403,15 @@ function parseReverseGeocodeResult(
     location,
     source: 'picked',
   }
+}
+
+function readMapClickLocation(event: unknown) {
+  return (
+    readLngLat(readRecordProperty(event, 'lnglat')) ||
+    readLngLat(readRecordProperty(event, 'lngLat')) ||
+    readLngLat(readRecordProperty(event, 'lngLatObj')) ||
+    readLngLat(event)
+  )
 }
 
 function readRouteDistance(value: unknown) {
@@ -897,6 +942,21 @@ export function InteractiveMapPage({
     map.add(marker)
   }, [])
 
+  const selectSearchPlace = useCallback(
+    (place: MapPlace, zoom = 15) => {
+      setSearchResults((currentResults) => [
+        place,
+        ...currentResults
+          .filter((currentPlace) => !isSamePlace(currentPlace, place))
+          .slice(0, 9),
+      ])
+      focusPlace(place, zoom)
+      setActiveTab('search')
+      setIsMobilePanelOpen(true)
+    },
+    [focusPlace],
+  )
+
   const loadFavorites = useCallback(async () => {
     setIsFavoritesLoading(true)
 
@@ -913,34 +973,34 @@ export function InteractiveMapPage({
 
   const reverseGeocodeAt = useCallback(
     (location: MapCoordinate) => {
+      const pickedPlace = createPickedCoordinatePlace(location)
       const geocoder = geocoderRef.current
 
+      selectSearchPlace(pickedPlace)
+      setMessage('已标注该坐标')
+      setErrorMessage('')
+
       if (!geocoder?.getAddress) {
-        setErrorMessage('地图反查服务尚未准备好')
+        setMessage('已标注该坐标，地址反查服务尚未准备好')
         return
       }
-
-      setMessage('')
-      setErrorMessage('')
 
       geocoder.getAddress(
         toAmapCoordinateTuple(location),
         (status: string, result: unknown) => {
           if (status !== 'complete') {
-            setErrorMessage('未能识别该地图位置')
+            setMessage('已标注该坐标，未能识别具体地址')
             return
           }
 
           const place = parseReverseGeocodeResult(result, location)
 
-          setSearchResults((currentResults) => [place, ...currentResults.slice(0, 9)])
-          focusPlace(place)
-          setActiveTab('search')
-          setIsMobilePanelOpen(true)
+          selectSearchPlace(place)
+          setMessage('已标注该地图位置')
         },
       )
     },
-    [focusPlace],
+    [selectSearchPlace],
   )
 
   useEffect(() => {
@@ -983,11 +1043,14 @@ export function InteractiveMapPage({
 
         map.addControl(geolocation)
         map.on('click', (event: unknown) => {
-          const location = readLngLat(readRecordProperty(event, 'lnglat'))
+          const location = readMapClickLocation(event)
 
           if (location) {
             reverseGeocodeAt(location)
+            return
           }
+
+          setErrorMessage('未能读取地图点击位置')
         })
 
         mapRef.current = map
