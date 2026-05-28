@@ -290,7 +290,7 @@ export function ModelGenerationLoader({
     : progressPhaseDetails[activeStepIndex]
   const progressBarStyle = useMemo(
     () => ({
-      width: `${displayedProgress}%`,
+      transform: `scaleX(${displayedProgress / 100})`,
     }),
     [displayedProgress],
   )
