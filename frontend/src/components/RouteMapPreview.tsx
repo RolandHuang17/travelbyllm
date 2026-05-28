@@ -195,7 +195,9 @@ export function RouteMapPreview({
 
         {!preview ? (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-100/90 px-6 text-center text-sm leading-6 text-slate-500">
-            提交自驾路线后，这里会显示起点、途经点和终点的地图。
+            {isLoading
+              ? '路线地图正在加载，稍后会显示起点、途经点和终点。'
+              : '提交自驾路线后，这里会显示起点、途经点和终点的地图。'}
           </div>
         ) : null}
 
@@ -211,9 +213,9 @@ export function RouteMapPreview({
           </div>
         ) : null}
 
-        {isLoading && preview ? (
+        {isLoading ? (
           <div className="absolute bottom-4 left-4 rounded-xl border border-white/70 bg-white/90 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm">
-            正在生成路线...
+            正在生成路线地图...
           </div>
         ) : null}
       </div>

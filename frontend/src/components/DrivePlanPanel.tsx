@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { TravelRecord } from '../api/history'
 import type { PreferenceCard } from '../api/cards'
 import {
@@ -197,6 +197,8 @@ export function DrivePlanPanel({
     useState('')
   const [isInputExpanded, setIsInputExpanded] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isGenerationComplete, setIsGenerationComplete] = useState(false)
+  const [isRoutePreviewLoading, setIsRoutePreviewLoading] = useState(false)
 
   useEffect(() => {
     let isActive = true
@@ -319,6 +321,8 @@ export function DrivePlanPanel({
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setIsSubmitting(true)
+    setIsGenerationComplete(false)
+    setIsRoutePreviewLoading(true)
     setMessage('')
     setErrorMessage('')
     setRoutePreview(null)
@@ -342,33 +346,47 @@ export function DrivePlanPanel({
       setRecord(result.record)
       setGenerationMode(result.generationMode)
       setGenerationModel(result.model)
-
-      const previewResult = await routePreviewPromise
-
-      if (previewResult.ok) {
-        setRoutePreview(previewResult.preview)
-      } else if (isAuthExpiredError(previewResult.error)) {
-        onAuthExpired()
-        return
-      } else {
-        setRoutePreviewError(getErrorMessage(previewResult.error))
-      }
-
       setMessage('多城市自驾路线已生成，并已自动保存到历史记录')
       setIsInputExpanded(false)
-      onPlanGenerated()
+      setIsGenerationComplete(true)
+
+      void routePreviewPromise.then((previewResult) => {
+        setIsRoutePreviewLoading(false)
+
+        if (previewResult.ok) {
+          setRoutePreview(previewResult.preview)
+          return
+        }
+
+        if (isAuthExpiredError(previewResult.error)) {
+          onAuthExpired()
+          return
+        }
+
+        setRoutePreviewError(getErrorMessage(previewResult.error))
+      })
     } catch (error) {
+      setIsRoutePreviewLoading(false)
+
       if (isAuthExpiredError(error)) {
+        setIsSubmitting(false)
+        setIsGenerationComplete(false)
         onAuthExpired()
         return
       }
 
       setErrorMessage(getErrorMessage(error))
       setIsInputExpanded(true)
-    } finally {
       setIsSubmitting(false)
+      setIsGenerationComplete(false)
     }
   }
+
+  const handleGenerationComplete = useCallback(() => {
+    setIsSubmitting(false)
+    setIsGenerationComplete(false)
+    onPlanGenerated()
+  }, [onPlanGenerated])
 
   const canCollapseInput = Boolean(plan || record)
   const departureCityLabel =
@@ -687,7 +705,9 @@ export function DrivePlanPanel({
                   { label: '旅行天数', value: travelDaysSummary },
                   { label: '出游日期', value: startDateSummary },
                 ]}
+                isComplete={isGenerationComplete}
                 llmStatus={llmStatus}
+                onCompleteAnimationEnd={handleGenerationComplete}
                 variant="drive"
               />
             </div>
@@ -714,7 +734,7 @@ export function DrivePlanPanel({
               <RouteMapPreview
                 accent="orange"
                 errorMessage={routePreviewError}
-                isLoading={false}
+                isLoading={isRoutePreviewLoading}
                 preview={routePreview}
               />
 

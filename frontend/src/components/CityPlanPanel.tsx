@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useState,
   type Dispatch,
@@ -170,6 +171,7 @@ export function CityPlanPanel({
   } = state
   const [llmStatus, setLlmStatus] = useState<LlmStatus | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isGenerationComplete, setIsGenerationComplete] = useState(false)
 
   const setPanelField = <K extends keyof CityPlanPanelState>(
     field: K,
@@ -293,6 +295,7 @@ export function CityPlanPanel({
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setIsSubmitting(true)
+    setIsGenerationComplete(false)
     setPanelFields({
       message: '',
       errorMessage: '',
@@ -309,9 +312,11 @@ export function CityPlanPanel({
         message: '单城市方案已生成，并已自动保存到历史记录',
         isInputExpanded: false,
       })
-      onPlanGenerated()
+      setIsGenerationComplete(true)
     } catch (error) {
       if (isAuthExpiredError(error)) {
+        setIsSubmitting(false)
+        setIsGenerationComplete(false)
         onAuthExpired()
         return
       }
@@ -320,10 +325,16 @@ export function CityPlanPanel({
         errorMessage: getErrorMessage(error),
         isInputExpanded: true,
       })
-    } finally {
       setIsSubmitting(false)
+      setIsGenerationComplete(false)
     }
   }
+
+  const handleGenerationComplete = useCallback(() => {
+    setIsSubmitting(false)
+    setIsGenerationComplete(false)
+    onPlanGenerated()
+  }, [onPlanGenerated])
 
   const canCollapseInput = Boolean(plan || record)
   const departureCityLabel =
@@ -575,7 +586,9 @@ export function CityPlanPanel({
                   { label: '旅行天数', value: travelDaysSummary },
                   { label: '出游日期', value: startDateSummary },
                 ]}
+                isComplete={isGenerationComplete}
                 llmStatus={llmStatus}
+                onCompleteAnimationEnd={handleGenerationComplete}
                 variant="city"
               />
             </div>

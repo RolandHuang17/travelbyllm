@@ -63,6 +63,33 @@ body {
   }
 }
 
+@keyframes model-progress-sheen {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(160%);
+  }
+}
+
+@keyframes model-complete-flash {
+  0% {
+    box-shadow: 0 18px 55px rgba(68, 64, 60, 0.08);
+  }
+
+  45% {
+    box-shadow:
+      0 18px 55px rgba(68, 64, 60, 0.08),
+      0 0 0 1px rgba(255, 255, 255, 0.8),
+      0 0 42px rgba(45, 212, 191, 0.2);
+  }
+
+  100% {
+    box-shadow: 0 18px 55px rgba(68, 64, 60, 0.08);
+  }
+}
+
 @keyframes spot-dialog-backdrop-in {
   from {
     opacity: 0;
@@ -123,6 +150,28 @@ body {
   animation: model-wait-dot 2.2s ease-in-out infinite;
 }
 
+.model-progress-fill {
+  transition: width 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.model-progress-fill::after {
+  animation: model-progress-sheen 2.4s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.58),
+    transparent
+  );
+  content: "";
+  inset: 0;
+  position: absolute;
+  width: 45%;
+}
+
+.model-complete-flash {
+  animation: model-complete-flash 720ms ease-out both;
+}
+
 .spot-dialog-backdrop {
   animation: spot-dialog-backdrop-in 180ms ease-out both;
 }
@@ -143,10 +192,16 @@ body {
   .model-soft-glow,
   .model-calm-ring,
   .model-wait-dot,
+  .model-progress-fill::after,
+  .model-complete-flash,
   .spot-dialog-backdrop,
   .spot-dialog-backdrop-out,
   .spot-dialog-panel,
   .spot-dialog-panel-out {
     animation: none;
+  }
+
+  .model-progress-fill {
+    transition: none;
   }
 }

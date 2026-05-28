@@ -1,6 +1,10 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { TravelRecord } from '../api/history'
+import {
+  fetchTravelRecordDetail,
+  HistoryApiError,
+  type TravelRecord,
+} from '../api/history'
 import {
   fetchLlmStatus,
   optimizePlan,
@@ -15,6 +19,7 @@ import {
   getGenerationDescription,
   getGenerationLabel,
 } from '../utils/generationDisplay'
+import { HistoryRecordPickerDialog } from './HistoryRecordPickerDialog'
 import { ItineraryResultPanel } from './ItineraryResultPanel'
 
 type OptimizePlanPanelProps = {
@@ -58,7 +63,40 @@ function getErrorMessage(error: unknown) {
 }
 
 function isAuthExpiredError(error: unknown) {
-  return error instanceof PlanApiError && error.statusCode === 401
+  return (
+    (error instanceof PlanApiError || error instanceof HistoryApiError) &&
+    error.statusCode === 401
+  )
+}
+
+function getRecordTypeLabel(recordType: string) {
+  if (recordType === 'single-city-plan') {
+    return '单城市'
+  }
+
+  if (recordType === 'multi-city-drive-plan') {
+    return '自驾路线'
+  }
+
+  if (recordType === 'optimized-plan') {
+    return '优化方案'
+  }
+
+  return recordType
+}
+
+function getRecordTitle(record: TravelRecord) {
+  return record.resultTitle || `${getRecordTypeLabel(record.recordType)} #${record.id}`
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString()
+}
+
+function parsePositiveRecordId(value: string) {
+  const recordId = Number(value)
+
+  return Number.isInteger(recordId) && recordId > 0 ? recordId : null
 }
 
 export function OptimizePlanPanel({
@@ -67,7 +105,10 @@ export function OptimizePlanPanel({
   onPlanGenerated,
 }: OptimizePlanPanelProps) {
   const [searchParams] = useSearchParams()
-  const [form, setForm] = useState<OptimizePlanFormState>(initialFormState)
+  const [form, setForm] = useState<OptimizePlanFormState>(() => ({
+    ...initialFormState,
+    recordId: searchParams.get('recordId') ?? initialFormState.recordId,
+  }))
   const [plan, setPlan] = useState<PlanResult | null>(null)
   const [record, setRecord] = useState<TravelRecord | null>(null)
   const [llmStatus, setLlmStatus] = useState<LlmStatus | null>(null)
@@ -79,6 +120,11 @@ export function OptimizePlanPanel({
   const [errorMessage, setErrorMessage] = useState('')
   const [isInputExpanded, setIsInputExpanded] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isGenerationComplete, setIsGenerationComplete] = useState(false)
+  const [sourceRecord, setSourceRecord] = useState<TravelRecord | null>(null)
+  const [isPickerOpen, setIsPickerOpen] = useState(false)
+  const [isSourceRecordLoading, setIsSourceRecordLoading] = useState(false)
+  const [sourceRecordErrorMessage, setSourceRecordErrorMessage] = useState('')
 
   useEffect(() => {
     let isActive = true
@@ -114,17 +160,62 @@ export function OptimizePlanPanel({
   }, [onAuthExpired, token])
 
   useEffect(() => {
-    const recordId = searchParams.get('recordId')
+    const initialRecordId = searchParams.get('recordId')
 
-    if (!recordId) {
+    if (!initialRecordId) {
       return
     }
 
-    setForm((currentForm) => ({
-      ...currentForm,
-      recordId,
-    }))
-  }, [searchParams])
+    const parsedRecordId = Number(initialRecordId)
+
+    if (!Number.isInteger(parsedRecordId) || parsedRecordId <= 0) {
+      setSourceRecordErrorMessage('历史记录 ID 格式不正确，请重新选择记录')
+      return
+    }
+
+    let isActive = true
+
+    const loadSourceRecord = async () => {
+      setIsSourceRecordLoading(true)
+      setSourceRecordErrorMessage('')
+
+      try {
+        const result = await fetchTravelRecordDetail(token, parsedRecordId)
+
+        if (!isActive) {
+          return
+        }
+
+        setSourceRecord(result.record)
+        setForm((currentForm) => ({
+          ...currentForm,
+          recordId: String(result.record.id),
+        }))
+      } catch (error) {
+        if (!isActive) {
+          return
+        }
+
+        if (isAuthExpiredError(error)) {
+          onAuthExpired()
+          return
+        }
+
+        setSourceRecord(null)
+        setSourceRecordErrorMessage(getErrorMessage(error))
+      } finally {
+        if (isActive) {
+          setIsSourceRecordLoading(false)
+        }
+      }
+    }
+
+    void loadSourceRecord()
+
+    return () => {
+      isActive = false
+    }
+  }, [onAuthExpired, searchParams, token])
 
   const updateFormField = (
     field: keyof OptimizePlanFormState,
@@ -138,7 +229,15 @@ export function OptimizePlanPanel({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const selectedRecordId = parsePositiveRecordId(form.recordId)
+
+    if (!selectedRecordId) {
+      setErrorMessage('请先选择要优化的历史记录')
+      return
+    }
+
     setIsSubmitting(true)
+    setIsGenerationComplete(false)
     setMessage('')
     setErrorMessage('')
 
@@ -151,23 +250,57 @@ export function OptimizePlanPanel({
       setGenerationModel(result.model)
       setMessage('方案已优化，并已作为新的历史记录保存')
       setIsInputExpanded(false)
-      onPlanGenerated()
+      setIsGenerationComplete(true)
     } catch (error) {
       if (isAuthExpiredError(error)) {
+        setIsSubmitting(false)
+        setIsGenerationComplete(false)
         onAuthExpired()
         return
       }
 
       setErrorMessage(getErrorMessage(error))
       setIsInputExpanded(true)
-    } finally {
       setIsSubmitting(false)
+      setIsGenerationComplete(false)
     }
+  }
+
+  const handleGenerationComplete = useCallback(() => {
+    setIsSubmitting(false)
+    setIsGenerationComplete(false)
+    onPlanGenerated()
+  }, [onPlanGenerated])
+
+  const handleSourceRecordSelected = (selectedRecord: TravelRecord) => {
+    setSourceRecord(selectedRecord)
+    setSourceRecordErrorMessage('')
+    setForm((currentForm) => ({
+      ...currentForm,
+      recordId: String(selectedRecord.id),
+    }))
+    setIsPickerOpen(false)
+  }
+
+  const handleClearSourceRecord = () => {
+    setSourceRecord(null)
+    setSourceRecordErrorMessage('')
+    setForm((currentForm) => ({
+      ...currentForm,
+      recordId: '',
+    }))
   }
 
   const canCollapseInput = Boolean(plan || record)
   const requirementSummary =
     form.optimizeRequirement.trim() || '未填写优化要求'
+  const selectedRecordId = parsePositiveRecordId(form.recordId)
+  const sourceRecordSummary = sourceRecord
+    ? `${getRecordTitle(sourceRecord)} · #${sourceRecord.id}`
+    : selectedRecordId
+      ? `#${selectedRecordId}`
+      : '未选择'
+  const canSubmit = Boolean(selectedRecordId) && !isSubmitting
 
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
@@ -217,7 +350,7 @@ export function OptimizePlanPanel({
                 优化输入
               </h3>
               <p className="mt-1 text-sm text-slate-500">
-                先到历史记录页找到要优化的记录 ID，再在这里填写优化要求。
+                选择一条已有行程作为来源，再填写本次希望调整的重点。
               </p>
             </div>
 
@@ -239,22 +372,61 @@ export function OptimizePlanPanel({
               className="mt-5 grid gap-4 lg:grid-cols-[0.32fr_0.68fr]"
               onSubmit={handleSubmit}
             >
-              <label className="block">
+              <div className="space-y-2">
                 <span className="text-sm font-medium text-slate-700">
-                  历史记录 ID
+                  来源记录
                 </span>
-                <input
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
-                  min={1}
-                  required
-                  type="number"
-                  value={form.recordId}
-                  onChange={(event) =>
-                    updateFormField('recordId', event.target.value)
-                  }
-                  placeholder="例如：1"
-                />
-              </label>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  {isSourceRecordLoading ? (
+                    <p className="text-sm leading-6 text-slate-500">
+                      正在读取来源记录...
+                    </p>
+                  ) : sourceRecord ? (
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">
+                          {getRecordTypeLabel(sourceRecord.recordType)}
+                        </span>
+                        <span className="text-xs font-medium text-slate-400">
+                          #{sourceRecord.id}
+                        </span>
+                      </div>
+                      <h4 className="mt-3 text-sm font-semibold leading-6 text-slate-900">
+                        {getRecordTitle(sourceRecord)}
+                      </h4>
+                      <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600">
+                        {sourceRecord.inputSummary}
+                      </p>
+                      <p className="mt-2 text-xs text-slate-500">
+                        生成时间：{formatDateTime(sourceRecord.createdAt)}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm leading-6 text-slate-600">
+                      还没有选择来源记录。打开历史记录选择器，可以直接搜索并预览已有方案。
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      className="inline-flex items-center justify-center rounded-xl bg-teal-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-teal-600"
+                      type="button"
+                      onClick={() => setIsPickerOpen(true)}
+                    >
+                      {sourceRecord ? '更换记录' : '选择历史记录'}
+                    </button>
+                    {sourceRecord || form.recordId ? (
+                      <button
+                        className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-rose-200 hover:text-rose-600"
+                        type="button"
+                        onClick={handleClearSourceRecord}
+                      >
+                        清除选择
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
 
               <label className="block">
                 <span className="text-sm font-medium text-slate-700">
@@ -283,21 +455,28 @@ export function OptimizePlanPanel({
                 </p>
               ) : null}
 
+              {sourceRecordErrorMessage ? (
+                <p className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700 lg:col-span-2">
+                  {sourceRecordErrorMessage}。可以重新选择一条历史记录。
+                </p>
+              ) : null}
+
               <button
                 className="w-full rounded-xl bg-teal-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-teal-600 disabled:cursor-not-allowed disabled:bg-slate-300 lg:col-span-2"
-                disabled={isSubmitting}
+                disabled={!canSubmit}
                 type="submit"
               >
-                {isSubmitting ? '正在优化，完成后自动展示' : '生成优化版方案'}
+                {isSubmitting
+                  ? '正在优化，完成后自动展示'
+                  : form.recordId
+                    ? '生成优化版方案'
+                    : '先选择来源记录'}
               </button>
             </form>
           ) : (
             <div className="mt-5 space-y-4">
               <div className="grid gap-3 md:grid-cols-[0.32fr_0.68fr]">
-                <SummaryItem
-                  label="来源记录"
-                  value={form.recordId ? `#${form.recordId}` : '未填写'}
-                />
+                <SummaryItem label="来源记录" value={sourceRecordSummary} />
                 <SummaryItem label="优化要求" value={requirementSummary} />
               </div>
 
@@ -324,11 +503,13 @@ export function OptimizePlanPanel({
                 contextItems={[
                   {
                     label: '来源记录',
-                    value: form.recordId ? `#${form.recordId}` : '未填写',
+                    value: sourceRecordSummary,
                   },
                   { label: '优化要求', value: requirementSummary },
                 ]}
+                isComplete={isGenerationComplete}
                 llmStatus={llmStatus}
+                onCompleteAnimationEnd={handleGenerationComplete}
                 variant="optimize"
               />
             </div>
@@ -361,6 +542,14 @@ export function OptimizePlanPanel({
           )}
         </div>
       </div>
+      <HistoryRecordPickerDialog
+        open={isPickerOpen}
+        selectedRecordId={selectedRecordId}
+        token={token}
+        onAuthExpired={onAuthExpired}
+        onClose={() => setIsPickerOpen(false)}
+        onSelect={handleSourceRecordSelected}
+      />
     </section>
   )
 }
